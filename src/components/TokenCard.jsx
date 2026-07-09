@@ -2,12 +2,18 @@ import { useState, useEffect, memo } from 'react'
 import { Copy, Trash2, CheckCircle, Check } from 'lucide-react'
 import * as OTPAuth from 'otpauth'
 import { getServiceIcon, getCategoryById } from '../utils/services'
+import { getServiceLogo } from '../utils/logos'
 import { HighlightText } from './HighlightText'
 
 const TokenCard = memo(function TokenCard({ token, currentTime, onCopy, onDelete, selectionMode, isSelected, onToggleSelect, searchQuery }) {
   const [code, setCode] = useState('')
   const [copied, setCopied] = useState(false)
   const [timeLeft, setTimeLeft] = useState(30)
+  const [logoError, setLogoError] = useState(false)
+
+  const serviceIcon = getServiceIcon(token.issuer)
+  const serviceLogo = getServiceLogo(token.issuer)
+  const category = token.category ? getCategoryById(token.category) : null
 
   useEffect(() => {
     try {
@@ -77,7 +83,17 @@ const TokenCard = memo(function TokenCard({ token, currentTime, onCopy, onDelete
       <div className="flex items-start justify-between mb-3 sm:mb-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="text-2xl">{serviceIcon}</span>
+            {/* 服务商图标/Logo */}
+            {serviceLogo && !logoError ? (
+              <img
+                src={serviceLogo}
+                alt={token.issuer}
+                className="w-6 h-6 rounded"
+                onError={() => setLogoError(true)}
+              />
+            ) : (
+              <span className="text-2xl">{serviceIcon}</span>
+            )}
             <span className="text-xs px-2 py-0.5 sm:py-1 bg-terracotta-tint text-terracotta rounded-full font-light truncate">
               <HighlightText text={token.issuer || '未命名'} highlight={searchQuery} />
             </span>
