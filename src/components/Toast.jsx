@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, memo } from 'react'
 import { CheckCircle, XCircle, AlertCircle, Info, X } from 'lucide-react'
 
 const TOAST_TYPES = {
@@ -24,7 +24,7 @@ const TOAST_TYPES = {
   }
 }
 
-export default function Toast({ message, type = 'info', duration = 3000, onClose }) {
+const Toast = memo(function Toast({ message, type = 'info', duration = 3000, onClose }) {
   const config = TOAST_TYPES[type]
   const Icon = config.icon
 
@@ -49,4 +49,6 @@ export default function Toast({ message, type = 'info', duration = 3000, onClose
       </div>
     </div>
   )
-}
+})
+
+export default Toast

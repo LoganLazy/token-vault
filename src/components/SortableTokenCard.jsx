@@ -1,8 +1,9 @@
+import { memo } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import TokenCard from './TokenCard'
 
-export default function SortableTokenCard({
+const SortableTokenCard = memo(function SortableTokenCard({
   token,
   currentTime,
   onCopy,
@@ -45,4 +46,6 @@ export default function SortableTokenCard({
       />
     </div>
   )
-}
+})
+
+export default SortableTokenCard

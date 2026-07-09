@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, memo } from 'react'
 import { Copy, Trash2, CheckCircle, Check } from 'lucide-react'
 import * as OTPAuth from 'otpauth'
 import { getServiceIcon, getCategoryById } from '../utils/services'
 import { HighlightText } from './HighlightText'
 
-export default function TokenCard({ token, currentTime, onCopy, onDelete, selectionMode, isSelected, onToggleSelect, searchQuery }) {
+const TokenCard = memo(function TokenCard({ token, currentTime, onCopy, onDelete, selectionMode, isSelected, onToggleSelect, searchQuery }) {
   const [code, setCode] = useState('')
   const [copied, setCopied] = useState(false)
   const [timeLeft, setTimeLeft] = useState(30)
@@ -141,4 +141,18 @@ export default function TokenCard({ token, currentTime, onCopy, onDelete, select
       </button>
     </div>
   )
-}
+}, (prevProps, nextProps) => {
+  // 自定义比较函数：仅在这些属性变化时重新渲染
+  return (
+    prevProps.token.id === nextProps.token.id &&
+    prevProps.currentTime === nextProps.currentTime &&
+    prevProps.selectionMode === nextProps.selectionMode &&
+    prevProps.isSelected === nextProps.isSelected &&
+    prevProps.searchQuery === nextProps.searchQuery &&
+    prevProps.token.issuer === nextProps.token.issuer &&
+    prevProps.token.account === nextProps.token.account &&
+    prevProps.token.category === nextProps.token.category
+  )
+})
+
+export default TokenCard

@@ -1,18 +1,21 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { Plus, Shield, Search, Menu, X, Sun, Moon, Lock, LockOpen, Download, Upload, Settings, Keyboard, CheckSquare } from 'lucide-react'
 import * as OTPAuth from 'otpauth'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { arrayMove, SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
 import TokenCard from './components/TokenCard'
 import SortableTokenCard from './components/SortableTokenCard'
-import AddTokenModal from './components/AddTokenModal'
-import BackupModal from './components/BackupModal'
-import MasterPasswordModal from './components/MasterPasswordModal'
-import SettingsModal from './components/SettingsModal'
-import SessionTimeoutWarning from './components/SessionTimeoutWarning'
-import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp'
-import PWAInstallPrompt from './components/PWAInstallPrompt'
-import BatchActionsBar from './components/BatchActionsBar'
+
+// 懒加载模态框组件
+const AddTokenModal = lazy(() => import('./components/AddTokenModal'))
+const BackupModal = lazy(() => import('./components/BackupModal'))
+const MasterPasswordModal = lazy(() => import('./components/MasterPasswordModal'))
+const SettingsModal = lazy(() => import('./components/SettingsModal'))
+const SessionTimeoutWarning = lazy(() => import('./components/SessionTimeoutWarning'))
+const KeyboardShortcutsHelp = lazy(() => import('./components/KeyboardShortcutsHelp'))
+const PWAInstallPrompt = lazy(() => import('./components/PWAInstallPrompt'))
+const BatchActionsBar = lazy(() => import('./components/BatchActionsBar'))
+
 import Toast from './components/Toast'
 import { categories } from './utils/services'
 import { useSessionTimeout } from './utils/sessionTimeout'
@@ -713,62 +716,65 @@ function App() {
       </main>
 
       {/* Modals */}
-      {isAddModalOpen && (
-        <AddTokenModal
-          onClose={() => setIsAddModalOpen(false)}
-          onAdd={addToken}
-        />
-      )}
+      {/* Modals with Lazy Loading */}
+      <Suspense fallback={null}>
+        {isAddModalOpen && (
+          <AddTokenModal
+            onClose={() => setIsAddModalOpen(false)}
+            onAdd={addToken}
+          />
+        )}
 
-      {isBackupModalOpen && (
-        <BackupModal
-          tokens={tokens}
-          onClose={() => setIsBackupModalOpen(false)}
-          onImport={handleImportBackup}
-        />
-      )}
+        {isBackupModalOpen && (
+          <BackupModal
+            tokens={tokens}
+            onClose={() => setIsBackupModalOpen(false)}
+            onImport={handleImportBackup}
+          />
+        )}
 
-      {isSettingsModalOpen && (
-        <SettingsModal
-          onClose={() => setIsSettingsModalOpen(false)}
-          settings={settings}
-          onSave={handleSaveSettings}
-        />
-      )}
+        {isSettingsModalOpen && (
+          <SettingsModal
+            onClose={() => setIsSettingsModalOpen(false)}
+            settings={settings}
+            onSave={handleSaveSettings}
+          />
+        )}
 
-      {masterPasswordModal && (
-        <MasterPasswordModal
-          mode={masterPasswordModal.mode}
-          onClose={() => setMasterPasswordModal(null)}
-          onSuccess={masterPasswordModal.onSuccess}
-        />
-      )}
+        {masterPasswordModal && (
+          <MasterPasswordModal
+            mode={masterPasswordModal.mode}
+            onClose={() => setMasterPasswordModal(null)}
+            onSuccess={masterPasswordModal.onSuccess}
+          />
+        )}
 
-      {isShortcutsHelpOpen && (
-        <KeyboardShortcutsHelp onClose={() => setIsShortcutsHelpOpen(false)} />
-      )}
+        {isShortcutsHelpOpen && (
+          <KeyboardShortcutsHelp onClose={() => setIsShortcutsHelpOpen(false)} />
+        )}
 
-      {/* Session Timeout Warning */}
-      {showTimeoutWarning && !isLocked && (
-        <SessionTimeoutWarning
-          remainingSeconds={remainingSeconds}
-          onExtend={resetActivity}
-        />
-      )}
+        {/* Session Timeout Warning */}
+        {showTimeoutWarning && !isLocked && (
+          <SessionTimeoutWarning
+            remainingSeconds={remainingSeconds}
+            onExtend={resetActivity}
+          />
+        )}
 
-      {/* PWA Install Prompt */}
-      <PWAInstallPrompt />
+        {/* PWA Install Prompt */}
+        <PWAInstallPrompt />
 
-      {/* Batch Actions Bar */}
-      {selectionMode && selectedTokens.length > 0 && (
-        <BatchActionsBar
-          selectedCount={selectedTokens.length}
-          onDelete={handleBatchDelete}
-          onMove={handleBatchMove}
-          onCancel={cancelSelection}
-          categories={categories}
-        />
-      )}
+        {/* Batch Actions Bar */}
+        {selectionMode && selectedTokens.length > 0 && (
+          <BatchActionsBar
+            selectedCount={selectedTokens.length}
+            onDelete={handleBatchDelete}
+            onMove={handleBatchMove}
+            onCancel={cancelSelection}
+            categories={categories}
+          />
+        )}
+      </Suspense>
 
       {/* Toast Notifications */}
       {toast.toasts.map(t => (
