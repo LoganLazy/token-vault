@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react'
-import { Plus, Shield, Search, Menu, X, Sun, Moon, Lock, LockOpen, Download, Upload, Settings, Keyboard, CheckSquare } from 'lucide-react'
+import { Plus, Shield, Search, Menu, X, Sun, Moon, Lock, LockOpen, Download, Upload, Settings, Keyboard, CheckSquare, BarChart3 } from 'lucide-react'
 import * as OTPAuth from 'otpauth'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { arrayMove, SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
@@ -15,6 +15,7 @@ const SessionTimeoutWarning = lazy(() => import('./components/SessionTimeoutWarn
 const KeyboardShortcutsHelp = lazy(() => import('./components/KeyboardShortcutsHelp'))
 const PWAInstallPrompt = lazy(() => import('./components/PWAInstallPrompt'))
 const BatchActionsBar = lazy(() => import('./components/BatchActionsBar'))
+const StatsModal = lazy(() => import('./components/StatsModal'))
 
 import Toast from './components/Toast'
 import { categories } from './utils/services'
@@ -23,6 +24,7 @@ import { useKeyboardShortcuts } from './utils/keyboardShortcuts'
 import { registerServiceWorker } from './utils/pwa'
 import { useToast } from './utils/toast'
 import { vibrate } from './utils/mobile'
+import { recordCopy } from './utils/stats'
 import {
   hasMasterPassword,
   hasEncryptedData,
@@ -37,6 +39,7 @@ function App() {
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false)
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
   const [isShortcutsHelpOpen, setIsShortcutsHelpOpen] = useState(false)
+  const [isStatsModalOpen, setIsStatsModalOpen] = useState(false)
   const [masterPasswordModal, setMasterPasswordModal] = useState(null)
   const [currentTime, setCurrentTime] = useState(Date.now())
   const [searchQuery, setSearchQuery] = useState('')
@@ -389,11 +392,16 @@ function App() {
     vibrate([15]) // 删除振动
   }
 
-  const copyCode = async (code) => {
+  const copyCode = async (code, tokenId) => {
     try {
       await navigator.clipboard.writeText(code)
       toast.success('✓ 验证码已复制', 2000)
       vibrate([10]) // 短振动反馈
+
+      // 记录统计
+      if (tokenId) {
+        recordCopy(tokenId)
+      }
     } catch (e) {
       console.error('Failed to copy:', e)
       toast.error('复制失败，请重试')
@@ -528,6 +536,13 @@ function App() {
                   title="快捷键 (?)"
                 >
                   <Keyboard className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => setIsStatsModalOpen(true)}
+                  className="p-2 text-muted hover:text-terracotta transition-colors"
+                  title="使用统计"
+                >
+                  <BarChart3 className="w-5 h-5" />
                 </button>
                 <button
                   onClick={() => setIsSettingsModalOpen(true)}
@@ -810,6 +825,14 @@ function App() {
 
         {isShortcutsHelpOpen && (
           <KeyboardShortcutsHelp onClose={() => setIsShortcutsHelpOpen(false)} />
+        )}
+
+        {/* Stats Modal */}
+        {isStatsModalOpen && (
+          <StatsModal
+            tokens={tokens}
+            onClose={() => setIsStatsModalOpen(false)}
+          />
         )}
 
         {/* Session Timeout Warning */}
