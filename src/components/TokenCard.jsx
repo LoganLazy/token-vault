@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react'
 import { Copy, Trash2, CheckCircle, Check } from 'lucide-react'
 import * as OTPAuth from 'otpauth'
 import { getServiceIcon, getCategoryById } from '../utils/services'
+import { HighlightText } from './HighlightText'
 
-export default function TokenCard({ token, currentTime, onCopy, onDelete, selectionMode, isSelected, onToggleSelect }) {
+export default function TokenCard({ token, currentTime, onCopy, onDelete, selectionMode, isSelected, onToggleSelect, searchQuery }) {
   const [code, setCode] = useState('')
   const [copied, setCopied] = useState(false)
   const [timeLeft, setTimeLeft] = useState(30)
@@ -78,7 +79,7 @@ export default function TokenCard({ token, currentTime, onCopy, onDelete, select
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="text-2xl">{serviceIcon}</span>
             <span className="text-xs px-2 py-0.5 sm:py-1 bg-terracotta-tint text-terracotta rounded-full font-light truncate">
-              {token.issuer || '未命名'}
+              <HighlightText text={token.issuer || '未命名'} highlight={searchQuery} />
             </span>
             {token.category && (
               <span className="text-xs px-2 py-0.5 sm:py-1 bg-border text-muted rounded-full font-light">
@@ -86,7 +87,9 @@ export default function TokenCard({ token, currentTime, onCopy, onDelete, select
               </span>
             )}
           </div>
-          <h3 className="text-base sm:text-lg font-normal text-ink dark:text-surface truncate">{token.account}</h3>
+          <h3 className="text-base sm:text-lg font-normal text-ink dark:text-surface truncate">
+            <HighlightText text={token.account} highlight={searchQuery} />
+          </h3>
         </div>
         {!selectionMode && (
           <button

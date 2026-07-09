@@ -14,6 +14,8 @@ export default function AddTokenModal({ onClose, onAdd }) {
     category: 'personal'
   })
   const [showScanner, setShowScanner] = useState(false)
+  const [batchImportMode, setBatchImportMode] = useState(false)
+  const [batchUris, setBatchUris] = useState('')
 
   const handleSubmit = (e) => {
     e.preventDefault()
@@ -29,6 +31,65 @@ export default function AddTokenModal({ onClose, onAdd }) {
     if (!uri) return
 
     parseUri(uri)
+  }
+
+  const handleBatchImport = () => {
+    if (!batchUris.trim()) {
+      alert('请粘贴至少一个 URI')
+      return
+    }
+
+    const uris = batchUris.split('\n').filter(line => line.trim().startsWith('otpauth://'))
+
+    if (uris.length === 0) {
+      alert('未找到有效的 URI，请确保每行一个 otpauth:// 链接')
+      return
+    }
+
+    let successCount = 0
+    let failCount = 0
+
+    uris.forEach(uri => {
+      try {
+        const tokenData = parseUriToData(uri.trim())
+        if (tokenData) {
+          onAdd(tokenData)
+          successCount++
+        }
+      } catch (e) {
+        console.error('Failed to parse URI:', uri, e)
+        failCount++
+      }
+    })
+
+    alert(`批量导入完成！\n成功: ${successCount} 个\n失败: ${failCount} 个`)
+    onClose()
+  }
+
+  const parseUriToData = (uri) => {
+    const url = new URL(uri)
+    const params = new URLSearchParams(url.search)
+    const pathParts = url.pathname.split('/')
+    const label = decodeURIComponent(pathParts[pathParts.length - 1])
+
+    let issuer = params.get('issuer') || ''
+    let account = label
+
+    if (label.includes(':')) {
+      const [labelIssuer, labelAccount] = label.split(':')
+      issuer = issuer || labelIssuer
+      account = labelAccount
+    }
+
+    return {
+      issuer,
+      account,
+      secret: params.get('secret') || '',
+      algorithm: params.get('algorithm') || 'SHA1',
+      digits: parseInt(params.get('digits') || '6'),
+      period: parseInt(params.get('period') || '30'),
+      category: 'personal'
+    }
   }
 
   const parseUri = (uri) => {
@@ -84,29 +145,81 @@ export default function AddTokenModal({ onClose, onAdd }) {
           </button>
 
           {/* Header */}
-          <h2 className="text-xl sm:text-2xl font-light text-ink mb-4 sm:mb-6 pr-8">添加两步验证账号</h2>
+          <h2 className="text-xl sm:text-2xl font-light text-ink mb-4 sm:mb-6 pr-8">
+            {batchImportMode ? '批量导入账号' : '添加两步验证账号'}
+          </h2>
 
-          {/* Action Buttons */}
-          <div className="grid grid-cols-2 gap-3 mb-4 sm:mb-6">
-            <button
-              onClick={() => setShowScanner(true)}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 sm:py-3 border-2 border-border hover:border-terracotta text-muted hover:text-terracotta rounded-full transition-colors font-light text-sm sm:text-base"
-            >
-              <Camera className="w-4 h-4 sm:w-5 sm:h-5" />
-              扫码
-            </button>
-            <button
-              onClick={handleImportUri}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 sm:py-3 border-2 border-border hover:border-terracotta text-muted hover:text-terracotta rounded-full transition-colors font-light text-sm sm:text-base"
-            >
-              <Upload className="w-4 h-4 sm:w-5 sm:h-5" />
-              URI 导入
-            </button>
-          </div>
+          {!batchImportMode ? (
+            <>
+              {/* Action Buttons */}
+              <div className="grid grid-cols-3 gap-2 mb-4 sm:mb-6">
+                <button
+                  onClick={() => setShowScanner(true)}
+                  className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 sm:py-3 border-2 border-border hover:border-terracotta text-muted hover:text-terracotta rounded-xl transition-colors font-light text-xs sm:text-sm"
+                >
+                  <Camera className="w-4 h-4 sm:w-5 sm:h-5" />
+                  扫码
+                </button>
+                <button
+                  onClick={handleImportUri}
+                  className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 sm:py-3 border-2 border-border hover:border-terracotta text-muted hover:text-terracotta rounded-xl transition-colors font-light text-xs sm:text-sm"
+                >
+                  <Upload className="w-4 h-4 sm:w-5 sm:h-5" />
+                  URI 导入
+                </button>
+                <button
+                  onClick={() => setBatchImportMode(true)}
+                  className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 sm:py-3 border-2 border-terracotta text-terracotta hover:bg-terracotta hover:text-white rounded-xl transition-colors font-light text-xs sm:text-sm"
+                >
+                  <Upload className="w-4 h-4 sm:w-5 sm:h-5" />
+                  批量导入
+                </button>
+              </div>
 
-          <div className="text-center text-muted text-xs sm:text-sm mb-4 sm:mb-6">或手动填写</div>
+              <div className="text-center text-muted text-xs sm:text-sm mb-4 sm:mb-6">或手动填写</div>
+            </>
+          ) : (
+            <>
+              {/* Batch Import UI */}
+              <div className="mb-4">
+                <label className="block text-sm text-muted mb-2">
+                  粘贴 URI 列表（每行一个 otpauth:// 链接）
+                </label>
+                <textarea
+                  value={batchUris}
+                  onChange={(e) => setBatchUris(e.target.value)}
+                  placeholder="otpauth://totp/Example:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example&#10;otpauth://totp/GitHub:username?secret=ABCDEFGHIJKLMNOP&issuer=GitHub&#10;..."
+                  className="w-full px-4 py-3 border border-border rounded-xl focus:outline-none focus:border-terracotta transition-colors font-mono text-xs resize-none"
+                  rows="10"
+                />
+                <p className="text-xs text-muted mt-2">
+                  💡 支持从 Google Authenticator、Authy 等应用导出的 URI 列表
+                </p>
+              </div>
 
-          {/* Form */}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBatchImportMode(false)
+                    setBatchUris('')
+                  }}
+                  className="flex-1 px-4 py-2.5 border border-border text-muted hover:bg-surface rounded-full transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBatchImport}
+                  className="flex-1 px-4 py-2.5 bg-terracotta hover:bg-terracotta-hover text-white rounded-full transition-colors font-medium"
+                >
+                  导入
+                </button>
+              </div>
+            </>
+          )}
+
+          {!batchImportMode && (
           <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
             <div>
               <label className="block text-xs sm:text-sm text-muted mb-1.5">分类</label>
@@ -209,6 +322,7 @@ export default function AddTokenModal({ onClose, onAdd }) {
               添加账号
             </button>
           </form>
+          )}
         </div>
       </div>
 

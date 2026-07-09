@@ -9,7 +9,8 @@ export default function SortableTokenCard({
   onDelete,
   selectionMode,
   isSelected,
-  onToggleSelect
+  onToggleSelect,
+  searchQuery
 }) {
   const {
     attributes,
@@ -40,6 +41,7 @@ export default function SortableTokenCard({
         selectionMode={selectionMode}
         isSelected={isSelected}
         onToggleSelect={onToggleSelect}
+        searchQuery={searchQuery}
       />
     </div>
   )

@@ -13,10 +13,12 @@ import SessionTimeoutWarning from './components/SessionTimeoutWarning'
 import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp'
 import PWAInstallPrompt from './components/PWAInstallPrompt'
 import BatchActionsBar from './components/BatchActionsBar'
+import Toast from './components/Toast'
 import { categories } from './utils/services'
 import { useSessionTimeout } from './utils/sessionTimeout'
 import { useKeyboardShortcuts } from './utils/keyboardShortcuts'
 import { registerServiceWorker } from './utils/pwa'
+import { useToast } from './utils/toast'
 import {
   hasMasterPassword,
   hasEncryptedData,
@@ -46,6 +48,7 @@ function App() {
   const [selectedTokens, setSelectedTokens] = useState([])
 
   const searchInputRef = useRef(null)
+  const toast = useToast()
 
   // 拖拽传感器配置
   const sensors = useSensors(
@@ -224,6 +227,7 @@ function App() {
       setTokens(tokens.filter(t => !selectedTokens.includes(t.id)))
       setSelectedTokens([])
       setSelectionMode(false)
+      toast.success(`✓ 已删除 ${selectedTokens.length} 个账号`, 2000)
     }
   }
 
@@ -235,6 +239,8 @@ function App() {
         ? { ...t, category: categoryId }
         : t
     ))
+    const categoryName = categories.find(c => c.id === categoryId)?.name
+    toast.success(`✓ 已移动 ${selectedTokens.length} 个账号到 ${categoryName}`, 2000)
     setSelectedTokens([])
     setSelectionMode(false)
   }
@@ -327,17 +333,21 @@ function App() {
     }
     setTokens([...tokens, newToken])
     setIsAddModalOpen(false)
+    toast.success('✓ 账号添加成功', 2000)
   }
 
   const deleteToken = (id) => {
     setTokens(tokens.filter(t => t.id !== id))
+    toast.success('✓ 账号已删除', 2000)
   }
 
   const copyCode = async (code) => {
     try {
       await navigator.clipboard.writeText(code)
+      toast.success('✓ 验证码已复制', 2000)
     } catch (e) {
       console.error('Failed to copy:', e)
+      toast.error('复制失败，请重试')
     }
   }
 
@@ -620,8 +630,22 @@ function App() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="搜索账号或服务商..."
-              className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-white dark:bg-surface border border-border rounded-full focus:outline-none focus:border-terracotta transition-colors text-ink dark:text-ink"
+              className="w-full pl-10 pr-24 py-2.5 sm:py-3 bg-white dark:bg-surface border border-border rounded-full focus:outline-none focus:border-terracotta transition-colors text-ink dark:text-surface"
             />
+            {searchQuery && (
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                <span className="text-xs text-muted">
+                  {filteredTokens.length} / {tokens.length}
+                </span>
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="text-muted hover:text-terracotta transition-colors"
+                  title="清除搜索"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Category Filters */}
@@ -679,6 +703,7 @@ function App() {
                     selectionMode={selectionMode}
                     isSelected={selectedTokens.includes(token.id)}
                     onToggleSelect={toggleTokenSelection}
+                    searchQuery={searchQuery}
                   />
                 ))}
               </div>
@@ -744,6 +769,17 @@ function App() {
           categories={categories}
         />
       )}
+
+      {/* Toast Notifications */}
+      {toast.toasts.map(t => (
+        <Toast
+          key={t.id}
+          message={t.message}
+          type={t.type}
+          duration={t.duration}
+          onClose={() => toast.removeToast(t.id)}
+        />
+      ))}
     </div>
   )
 }
