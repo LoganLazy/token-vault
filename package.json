@@ -1,7 +1,7 @@
 {
   "name": "totp-hub",
-  "version": "1.0.0",
-  "description": "安全便捷的两步验证码管理工具 - 中文优化版",
+  "version": "1.1.0",
+  "description": "安全便捷的两步验证码管理工具 - 企业级加密保护",
   "private": false,
   "type": "module",
   "author": "TOTP Hub",
