@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@theme {
+  --color-cream: #F7F4EF;
+  --color-surface: #FBF9F5;
+  --color-border: #E7E1D7;
+  --color-ink: #1F2421;
+  --color-muted: #5C635D;
+  --color-terracotta: #C4612F;
+  --color-terracotta-hover: #A94E22;
+  --color-terracotta-tint: #F2E3D6;
+}
+
+/* 暗色模式 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+  }
+}
+
+.dark {
+  --color-cream: #1F2421;
+  --color-surface: #2A2D2B;
+  --color-border: #3A3D3B;
+  --color-ink: #F7F4EF;
+  --color-muted: #9BA19C;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* 隐藏滚动条但保留滚动功能 */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

@@ -1,0 +1,48 @@
+{
+  "name": "totp-hub",
+  "version": "1.0.0",
+  "description": "安全便捷的两步验证码管理工具 - 中文优化版",
+  "private": false,
+  "type": "module",
+  "author": "TOTP Hub",
+  "license": "MIT",
+  "keywords": [
+    "totp",
+    "2fa",
+    "authenticator",
+    "otp",
+    "two-factor",
+    "中文",
+    "验证码"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/totp-hub"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "oxlint",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "crypto-js": "^4.2.0",
+    "html5-qrcode": "^2.3.8",
+    "lucide-react": "^1.23.0",
+    "otpauth": "^9.5.1",
+    "qrcode.react": "^4.2.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "autoprefixer": "^10.5.2",
+    "oxlint": "^1.71.0",
+    "postcss": "^8.5.16",
+    "tailwindcss": "^4.3.2",
+    "vite": "^8.1.1"
+  }
+}
