@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { Plus, Shield, Search, Menu, X, Sun, Moon, Lock, LockOpen, Download, Upload, Settings, Keyboard } from 'lucide-react'
 import * as OTPAuth from 'otpauth'
+import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
+import { arrayMove, SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
 import TokenCard from './components/TokenCard'
+import SortableTokenCard from './components/SortableTokenCard'
 import AddTokenModal from './components/AddTokenModal'
 import BackupModal from './components/BackupModal'
 import MasterPasswordModal from './components/MasterPasswordModal'
@@ -40,6 +43,21 @@ function App() {
   })
 
   const searchInputRef = useRef(null)
+
+  // 拖拽传感器配置
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // 移动 8px 后才开始拖拽，避免误触
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 200, // 长按 200ms 后开始拖拽
+        tolerance: 5,
+      },
+    })
+  )
 
   // 会话超时
   const {
@@ -159,6 +177,22 @@ function App() {
       const code = totp.generate()
       copyCode(code)
     }
+  }
+
+  // 处理拖拽结束
+  const handleDragEnd = (event) => {
+    const { active, over } = event
+
+    if (!over || active.id === over.id) {
+      return
+    }
+
+    setTokens((items) => {
+      const oldIndex = items.findIndex((item) => item.id === active.id)
+      const newIndex = items.findIndex((item) => item.id === over.id)
+
+      return arrayMove(items, oldIndex, newIndex)
+    })
   }
 
   // Check if app needs to be unlocked on startup
@@ -551,17 +585,28 @@ function App() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-            {filteredTokens.map((token) => (
-              <TokenCard
-                key={token.id}
-                token={token}
-                currentTime={currentTime}
-                onCopy={copyCode}
-                onDelete={deleteToken}
-              />
-            ))}
-          </div>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={filteredTokens.map(t => t.id)}
+              strategy={rectSortingStrategy}
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                {filteredTokens.map((token) => (
+                  <SortableTokenCard
+                    key={token.id}
+                    token={token}
+                    currentTime={currentTime}
+                    onCopy={copyCode}
+                    onDelete={deleteToken}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
         )}
       </main>
 
