@@ -1,10 +1,16 @@
-import { useState, useEffect } from 'react'
-import { Plus, Shield, Search, Menu, X, Sun, Moon, Lock, LockOpen, Download, Upload } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Plus, Shield, Search, Menu, X, Sun, Moon, Lock, LockOpen, Download, Upload, Settings, Keyboard } from 'lucide-react'
+import * as OTPAuth from 'otpauth'
 import TokenCard from './components/TokenCard'
 import AddTokenModal from './components/AddTokenModal'
 import BackupModal from './components/BackupModal'
 import MasterPasswordModal from './components/MasterPasswordModal'
+import SettingsModal from './components/SettingsModal'
+import SessionTimeoutWarning from './components/SessionTimeoutWarning'
+import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp'
 import { categories } from './utils/services'
+import { useSessionTimeout } from './utils/sessionTimeout'
+import { useKeyboardShortcuts } from './utils/keyboardShortcuts'
 import {
   hasMasterPassword,
   hasEncryptedData,
@@ -17,6 +23,8 @@ function App() {
   const [tokens, setTokens] = useState([])
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false)
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
+  const [isShortcutsHelpOpen, setIsShortcutsHelpOpen] = useState(false)
   const [masterPasswordModal, setMasterPasswordModal] = useState(null)
   const [currentTime, setCurrentTime] = useState(Date.now())
   const [searchQuery, setSearchQuery] = useState('')
@@ -25,6 +33,112 @@ function App() {
   const [showMenu, setShowMenu] = useState(false)
   const [isLocked, setIsLocked] = useState(false)
   const [currentPassword, setCurrentPassword] = useState(null)
+  const [settings, setSettings] = useState({
+    timeoutMinutes: 15
+  })
+
+  const searchInputRef = useRef(null)
+
+  // 会话超时
+  const {
+    showWarning: showTimeoutWarning,
+    remainingSeconds,
+    resetActivity,
+    setTimeoutEnabled
+  } = useSessionTimeout(
+    () => {
+      // 超时回调 - 自动锁定
+      if (hasMasterPassword() && !isLocked) {
+        handleLock()
+      }
+    },
+    settings.timeoutMinutes
+  )
+
+  // 加载设置
+  useEffect(() => {
+    const savedSettings = localStorage.getItem('totp-hub-settings')
+    if (savedSettings) {
+      try {
+        const parsed = JSON.parse(savedSettings)
+        setSettings(parsed)
+      } catch (e) {
+        console.error('Failed to load settings:', e)
+      }
+    }
+  }, [])
+
+  // 保存设置
+  const handleSaveSettings = (newSettings) => {
+    setSettings(newSettings)
+    localStorage.setItem('totp-hub-settings', JSON.stringify(newSettings))
+    // 更新超时设置
+    setTimeoutEnabled(newSettings.timeoutMinutes > 0)
+  }
+
+  // 快捷键配置
+  useKeyboardShortcuts({
+    'Ctrl+K': () => {
+      searchInputRef.current?.focus()
+    },
+    'Ctrl+N': () => {
+      if (!isLocked) setIsAddModalOpen(true)
+    },
+    'Ctrl+B': () => {
+      if (!isLocked) setIsBackupModalOpen(true)
+    },
+    'Ctrl+,': () => {
+      if (!isLocked) setIsSettingsModalOpen(true)
+    },
+    'Ctrl+L': () => {
+      if (hasMasterPassword() && !isLocked) handleLock()
+    },
+    'Ctrl+D': () => {
+      toggleDarkMode()
+    },
+    'Escape': () => {
+      if (isAddModalOpen) setIsAddModalOpen(false)
+      if (isBackupModalOpen) setIsBackupModalOpen(false)
+      if (isSettingsModalOpen) setIsSettingsModalOpen(false)
+      if (isShortcutsHelpOpen) setIsShortcutsHelpOpen(false)
+    },
+    '?': () => {
+      setIsShortcutsHelpOpen(true)
+    },
+    // 数字键切换分类
+    '1': () => setSelectedCategory('all'),
+    '2': () => setSelectedCategory('work'),
+    '3': () => setSelectedCategory('personal'),
+    '4': () => setSelectedCategory('finance'),
+    '5': () => setSelectedCategory('social'),
+    '6': () => setSelectedCategory('dev'),
+    '7': () => setSelectedCategory('other'),
+    // Ctrl+数字快速复制
+    'Ctrl+1': () => copyTokenByIndex(0),
+    'Ctrl+2': () => copyTokenByIndex(1),
+    'Ctrl+3': () => copyTokenByIndex(2),
+    'Ctrl+4': () => copyTokenByIndex(3),
+    'Ctrl+5': () => copyTokenByIndex(4),
+    'Ctrl+6': () => copyTokenByIndex(5),
+    'Ctrl+7': () => copyTokenByIndex(6),
+    'Ctrl+8': () => copyTokenByIndex(7),
+    'Ctrl+9': () => copyTokenByIndex(8)
+  }, !isLocked)
+
+  // 快速复制第 N 个验证码
+  const copyTokenByIndex = (index) => {
+    if (filteredTokens[index]) {
+      const token = filteredTokens[index]
+      const totp = new OTPAuth.TOTP({
+        secret: token.secret,
+        algorithm: token.algorithm || 'SHA1',
+        digits: token.digits || 6,
+        period: token.period || 30
+      })
+      const code = totp.generate()
+      copyCode(code)
+    }
+  }
 
   // Check if app needs to be unlocked on startup
   useEffect(() => {
@@ -220,9 +334,23 @@ function App() {
               {/* Desktop Actions */}
               <div className="hidden sm:flex items-center gap-2">
                 <button
+                  onClick={() => setIsShortcutsHelpOpen(true)}
+                  className="p-2 text-muted hover:text-terracotta transition-colors"
+                  title="快捷键 (?)"
+                >
+                  <Keyboard className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => setIsSettingsModalOpen(true)}
+                  className="p-2 text-muted hover:text-terracotta transition-colors"
+                  title="设置 (Ctrl+,)"
+                >
+                  <Settings className="w-5 h-5" />
+                </button>
+                <button
                   onClick={() => setIsBackupModalOpen(true)}
                   className="p-2 text-muted hover:text-terracotta transition-colors"
-                  title="备份与恢复"
+                  title="备份与恢复 (Ctrl+B)"
                 >
                   <Download className="w-5 h-5" />
                 </button>
@@ -277,6 +405,16 @@ function App() {
             <div className="sm:hidden mt-4 pb-2 border-t border-border pt-4 space-y-2">
               <button
                 onClick={() => {
+                  setIsSettingsModalOpen(true)
+                  setShowMenu(false)
+                }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-muted hover:text-terracotta hover:bg-terracotta-tint rounded-lg transition-colors"
+              >
+                <Settings className="w-5 h-5" />
+                <span>设置</span>
+              </button>
+              <button
+                onClick={() => {
                   setIsBackupModalOpen(true)
                   setShowMenu(false)
                 }}
@@ -284,6 +422,16 @@ function App() {
               >
                 <Download className="w-5 h-5" />
                 <span>备份与恢复</span>
+              </button>
+              <button
+                onClick={() => {
+                  setIsShortcutsHelpOpen(true)
+                  setShowMenu(false)
+                }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-muted hover:text-terracotta hover:bg-terracotta-tint rounded-lg transition-colors"
+              >
+                <Keyboard className="w-5 h-5" />
+                <span>快捷键</span>
               </button>
               {hasMasterPassword() ? (
                 <>
@@ -338,6 +486,7 @@ function App() {
           <div className="relative mb-4">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
             <input
+              ref={searchInputRef}
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -411,11 +560,31 @@ function App() {
         />
       )}
 
+      {isSettingsModalOpen && (
+        <SettingsModal
+          onClose={() => setIsSettingsModalOpen(false)}
+          settings={settings}
+          onSave={handleSaveSettings}
+        />
+      )}
+
       {masterPasswordModal && (
         <MasterPasswordModal
           mode={masterPasswordModal.mode}
           onClose={() => setMasterPasswordModal(null)}
           onSuccess={masterPasswordModal.onSuccess}
+        />
+      )}
+
+      {isShortcutsHelpOpen && (
+        <KeyboardShortcutsHelp onClose={() => setIsShortcutsHelpOpen(false)} />
+      )}
+
+      {/* Session Timeout Warning */}
+      {showTimeoutWarning && !isLocked && (
+        <SessionTimeoutWarning
+          remainingSeconds={remainingSeconds}
+          onExtend={resetActivity}
         />
       )}
     </div>
