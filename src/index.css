@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/* 安全区域变量（iOS 刘海屏等） */
+:root {
+  --safe-area-inset-top: env(safe-area-inset-top);
+  --safe-area-inset-right: env(safe-area-inset-right);
+  --safe-area-inset-bottom: env(safe-area-inset-bottom);
+  --safe-area-inset-left: env(safe-area-inset-left);
+}
+
 @theme {
   --color-cream: #F7F4EF;
   --color-surface: #FBF9F5;
@@ -72,10 +80,39 @@ body {
   }
 }
 
+@keyframes slide-down {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -100%);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 .animate-slide-up {
   animation: slide-up 0.3s ease-out;
 }
 
 .animate-slide-in-right {
   animation: slide-in-right 0.3s ease-out;
+}
+
+.animate-slide-down {
+  animation: slide-down 0.3s ease-out;
+}
+
+/* 底部安全区域适配 */
+.safe-area-bottom {
+  padding-bottom: calc(1rem + var(--safe-area-inset-bottom));
+}
+
+/* 禁止长按选择（拖拽区域） */
+.no-select {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }

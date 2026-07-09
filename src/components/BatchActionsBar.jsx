@@ -8,7 +8,7 @@ export default function BatchActionsBar({
   categories
 }) {
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-surface border-t border-border shadow-2xl z-30 animate-slide-up">
+    <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-surface border-t border-border shadow-2xl z-30 animate-slide-up safe-area-bottom">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
         <div className="flex items-center justify-between gap-4">
           {/* Selection Info */}

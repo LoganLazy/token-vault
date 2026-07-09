@@ -22,6 +22,7 @@ import { useSessionTimeout } from './utils/sessionTimeout'
 import { useKeyboardShortcuts } from './utils/keyboardShortcuts'
 import { registerServiceWorker } from './utils/pwa'
 import { useToast } from './utils/toast'
+import { vibrate } from './utils/mobile'
 import {
   hasMasterPassword,
   hasEncryptedData,
@@ -49,6 +50,7 @@ function App() {
   })
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedTokens, setSelectedTokens] = useState([])
+  const [refreshing, setRefreshing] = useState(false)
 
   const searchInputRef = useRef(null)
   const toast = useToast()
@@ -231,6 +233,7 @@ function App() {
       setSelectedTokens([])
       setSelectionMode(false)
       toast.success(`✓ 已删除 ${selectedTokens.length} 个账号`, 2000)
+      vibrate([20]) // 批量删除振动
     }
   }
 
@@ -251,6 +254,47 @@ function App() {
   const cancelSelection = () => {
     setSelectionMode(false)
     setSelectedTokens([])
+  }
+
+  // 下拉刷新
+  const handleRefresh = () => {
+    setRefreshing(true)
+    vibrate([15])
+
+    // 强制重新生成所有验证码
+    setCurrentTime(Date.now())
+
+    setTimeout(() => {
+      setRefreshing(false)
+      toast.success('✓ 已刷新', 1500)
+    }, 800)
+  }
+
+  // 下拉刷新手势
+  let touchStartY = 0
+  let touchCurrentY = 0
+
+  const handleTouchStart = (e) => {
+    if (window.scrollY === 0 && !isLocked) {
+      touchStartY = e.touches[0].clientY
+    }
+  }
+
+  const handleTouchMove = (e) => {
+    if (touchStartY === 0 || isLocked) return
+
+    touchCurrentY = e.touches[0].clientY
+    const diff = touchCurrentY - touchStartY
+
+    if (diff > 100 && !refreshing) {
+      handleRefresh()
+      touchStartY = 0
+    }
+  }
+
+  const handleTouchEnd = () => {
+    touchStartY = 0
+    touchCurrentY = 0
   }
 
   // Check if app needs to be unlocked on startup
@@ -342,15 +386,18 @@ function App() {
   const deleteToken = (id) => {
     setTokens(tokens.filter(t => t.id !== id))
     toast.success('✓ 账号已删除', 2000)
+    vibrate([15]) // 删除振动
   }
 
   const copyCode = async (code) => {
     try {
       await navigator.clipboard.writeText(code)
       toast.success('✓ 验证码已复制', 2000)
+      vibrate([10]) // 短振动反馈
     } catch (e) {
       console.error('Failed to copy:', e)
       toast.error('复制失败，请重试')
+      vibrate([50, 50, 50]) // 错误振动
     }
   }
 
@@ -416,7 +463,19 @@ function App() {
   })
 
   return (
-    <div className="min-h-screen bg-cream dark:bg-ink transition-colors">
+    <div
+      className="min-h-screen bg-cream dark:bg-ink transition-colors"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* 下拉刷新指示器 */}
+      {refreshing && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-terracotta text-white px-4 py-2 rounded-full text-sm shadow-lg animate-slide-down">
+          🔄 正在刷新...
+        </div>
+      )}
+
       {/* Header */}
       <header className="sticky top-0 z-10 backdrop-blur-lg bg-surface/80 dark:bg-ink/80 border-b border-border transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4">
