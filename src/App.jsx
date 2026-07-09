@@ -1,10 +1,17 @@
 import { useState, useEffect } from 'react'
-import { Plus, Shield, Search, Menu, X, Sun, Moon, Lock, Download, Upload } from 'lucide-react'
+import { Plus, Shield, Search, Menu, X, Sun, Moon, Lock, LockOpen, Download, Upload } from 'lucide-react'
 import TokenCard from './components/TokenCard'
 import AddTokenModal from './components/AddTokenModal'
 import BackupModal from './components/BackupModal'
 import MasterPasswordModal from './components/MasterPasswordModal'
 import { categories } from './utils/services'
+import {
+  hasMasterPassword,
+  hasEncryptedData,
+  encryptTokens,
+  decryptTokens,
+  removeMasterPassword
+} from './utils/encryption'
 
 function App() {
   const [tokens, setTokens] = useState([])
@@ -16,17 +23,24 @@ function App() {
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [darkMode, setDarkMode] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
+  const [isLocked, setIsLocked] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState(null)
 
-  // Load tokens from localStorage
+  // Check if app needs to be unlocked on startup
   useEffect(() => {
-    const saved = localStorage.getItem('totp-tokens')
-    if (saved) {
-      try {
-        setTokens(JSON.parse(saved))
-      } catch (e) {
-        console.error('Failed to load tokens:', e)
-      }
+    const needsUnlock = hasMasterPassword() && hasEncryptedData()
+
+    if (needsUnlock) {
+      setIsLocked(true)
+      setMasterPasswordModal({
+        mode: 'verify',
+        onSuccess: handleUnlock
+      })
+    } else {
+      // Load tokens from localStorage (legacy unencrypted data)
+      loadUnencryptedTokens()
     }
+
     // Load dark mode preference
     const darkModeSaved = localStorage.getItem('dark-mode')
     if (darkModeSaved === 'true') {
@@ -35,10 +49,49 @@ function App() {
     }
   }, [])
 
-  // Save tokens to localStorage
+  // Load unencrypted tokens (legacy or no master password)
+  const loadUnencryptedTokens = () => {
+    const saved = localStorage.getItem('totp-tokens')
+    if (saved) {
+      try {
+        setTokens(JSON.parse(saved))
+      } catch (e) {
+        console.error('Failed to load tokens:', e)
+      }
+    }
+  }
+
+  // Handle unlock with master password
+  const handleUnlock = (password) => {
+    try {
+      const decrypted = decryptTokens(password)
+      if (decrypted) {
+        setTokens(decrypted)
+        setCurrentPassword(password)
+        setIsLocked(false)
+      }
+    } catch (e) {
+      alert('解锁失败: ' + e.message)
+      // Show unlock modal again
+      setMasterPasswordModal({
+        mode: 'verify',
+        onSuccess: handleUnlock
+      })
+    }
+  }
+
+  // Save tokens (encrypted or unencrypted based on master password)
   useEffect(() => {
-    localStorage.setItem('totp-tokens', JSON.stringify(tokens))
-  }, [tokens])
+    if (isLocked) return // Don't save when locked
+
+    if (hasMasterPassword() && currentPassword) {
+      // Save encrypted
+      encryptTokens(tokens, currentPassword)
+    } else {
+      // Save unencrypted (legacy)
+      localStorage.setItem('totp-tokens', JSON.stringify(tokens))
+    }
+  }, [tokens, isLocked, currentPassword])
 
   // Update time every second for TOTP refresh
   useEffect(() => {
@@ -84,6 +137,42 @@ function App() {
   const handleImportBackup = (importedTokens) => {
     setTokens(importedTokens)
     setIsBackupModalOpen(false)
+  }
+
+  // Handle setting up master password
+  const handleSetupMasterPassword = (password) => {
+    // Encrypt all current tokens
+    encryptTokens(tokens, password)
+    setCurrentPassword(password)
+    alert('主密码设置成功！您的数据已加密保护。')
+  }
+
+  // Handle removing master password
+  const handleRemoveMasterPassword = () => {
+    // Decrypt and save as plain text
+    if (currentPassword) {
+      const decrypted = decryptTokens(currentPassword)
+      if (decrypted) {
+        setTokens(decrypted)
+        localStorage.setItem('totp-tokens', JSON.stringify(decrypted))
+      }
+    }
+    removeMasterPassword()
+    setCurrentPassword(null)
+    alert('主密码已移除，数据已解密为明文存储。')
+  }
+
+  // Manual lock function
+  const handleLock = () => {
+    if (hasMasterPassword()) {
+      setIsLocked(true)
+      setTokens([])
+      setCurrentPassword(null)
+      setMasterPasswordModal({
+        mode: 'verify',
+        onSuccess: handleUnlock
+      })
+    }
   }
 
   // Filter tokens
@@ -137,13 +226,38 @@ function App() {
                 >
                   <Download className="w-5 h-5" />
                 </button>
-                <button
-                  onClick={() => setMasterPasswordModal({ mode: 'setup' })}
-                  className="p-2 text-muted hover:text-terracotta transition-colors"
-                  title="设置主密码"
-                >
-                  <Lock className="w-5 h-5" />
-                </button>
+                {hasMasterPassword() ? (
+                  <>
+                    <button
+                      onClick={handleLock}
+                      className="p-2 text-muted hover:text-terracotta transition-colors"
+                      title="锁定应用"
+                    >
+                      <Lock className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={() => setMasterPasswordModal({
+                        mode: 'remove',
+                        onSuccess: handleRemoveMasterPassword
+                      })}
+                      className="p-2 text-muted hover:text-terracotta transition-colors"
+                      title="移除主密码"
+                    >
+                      <LockOpen className="w-5 h-5" />
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => setMasterPasswordModal({
+                      mode: 'setup',
+                      onSuccess: handleSetupMasterPassword
+                    })}
+                    className="p-2 text-muted hover:text-terracotta transition-colors"
+                    title="设置主密码"
+                  >
+                    <Lock className="w-5 h-5" />
+                  </button>
+                )}
               </div>
 
               {/* Add Button */}
@@ -171,16 +285,47 @@ function App() {
                 <Download className="w-5 h-5" />
                 <span>备份与恢复</span>
               </button>
-              <button
-                onClick={() => {
-                  setMasterPasswordModal({ mode: 'setup' })
-                  setShowMenu(false)
-                }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-muted hover:text-terracotta hover:bg-terracotta-tint rounded-lg transition-colors"
-              >
-                <Lock className="w-5 h-5" />
-                <span>设置主密码</span>
-              </button>
+              {hasMasterPassword() ? (
+                <>
+                  <button
+                    onClick={() => {
+                      handleLock()
+                      setShowMenu(false)
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-muted hover:text-terracotta hover:bg-terracotta-tint rounded-lg transition-colors"
+                  >
+                    <Lock className="w-5 h-5" />
+                    <span>锁定应用</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setMasterPasswordModal({
+                        mode: 'remove',
+                        onSuccess: handleRemoveMasterPassword
+                      })
+                      setShowMenu(false)
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-muted hover:text-terracotta hover:bg-terracotta-tint rounded-lg transition-colors"
+                  >
+                    <LockOpen className="w-5 h-5" />
+                    <span>移除主密码</span>
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => {
+                    setMasterPasswordModal({
+                      mode: 'setup',
+                      onSuccess: handleSetupMasterPassword
+                    })
+                    setShowMenu(false)
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-muted hover:text-terracotta hover:bg-terracotta-tint rounded-lg transition-colors"
+                >
+                  <Lock className="w-5 h-5" />
+                  <span>设置主密码</span>
+                </button>
+              )}
             </div>
           )}
         </div>
