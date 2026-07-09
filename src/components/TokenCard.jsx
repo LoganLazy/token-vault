@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Copy, Trash2, CheckCircle } from 'lucide-react'
+import { Copy, Trash2, CheckCircle, Check } from 'lucide-react'
 import * as OTPAuth from 'otpauth'
 import { getServiceIcon, getCategoryById } from '../utils/services'
 
-export default function TokenCard({ token, currentTime, onCopy, onDelete }) {
+export default function TokenCard({ token, currentTime, onCopy, onDelete, selectionMode, isSelected, onToggleSelect }) {
   const [code, setCode] = useState('')
   const [copied, setCopied] = useState(false)
   const [timeLeft, setTimeLeft] = useState(30)
@@ -49,7 +49,29 @@ export default function TokenCard({ token, currentTime, onCopy, onDelete }) {
   const category = getCategoryById(token.category)
 
   return (
-    <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-border hover:shadow-lg transition-shadow">
+    <div
+      className={`bg-white dark:bg-surface rounded-xl sm:rounded-2xl p-4 sm:p-6 border transition-all ${
+        selectionMode
+          ? isSelected
+            ? 'border-terracotta bg-terracotta/5 dark:bg-terracotta/10'
+            : 'border-border hover:border-terracotta/50'
+          : 'border-border hover:shadow-lg'
+      }`}
+      onClick={selectionMode ? () => onToggleSelect(token.id) : undefined}
+    >
+      {/* Selection Checkbox */}
+      {selectionMode && (
+        <div className="absolute top-3 right-3 z-10">
+          <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+            isSelected
+              ? 'bg-terracotta border-terracotta'
+              : 'bg-white dark:bg-surface border-border'
+          }`}>
+            {isSelected && <Check className="w-4 h-4 text-white" />}
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-start justify-between mb-3 sm:mb-4">
         <div className="flex-1 min-w-0">
@@ -64,15 +86,17 @@ export default function TokenCard({ token, currentTime, onCopy, onDelete }) {
               </span>
             )}
           </div>
-          <h3 className="text-base sm:text-lg font-normal text-ink truncate">{token.account}</h3>
+          <h3 className="text-base sm:text-lg font-normal text-ink dark:text-surface truncate">{token.account}</h3>
         </div>
-        <button
-          onClick={() => onDelete(token.id)}
-          className="text-muted hover:text-terracotta transition-colors p-1 flex-shrink-0"
-          title="删除"
-        >
-          <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
-        </button>
+        {!selectionMode && (
+          <button
+            onClick={() => onDelete(token.id)}
+            className="text-muted hover:text-terracotta transition-colors p-1 flex-shrink-0"
+            title="删除"
+          >
+            <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+          </button>
+        )}
       </div>
 
       {/* Code Display */}

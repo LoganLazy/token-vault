@@ -2,7 +2,15 @@ import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import TokenCard from './TokenCard'
 
-export default function SortableTokenCard({ token, currentTime, onCopy, onDelete }) {
+export default function SortableTokenCard({
+  token,
+  currentTime,
+  onCopy,
+  onDelete,
+  selectionMode,
+  isSelected,
+  onToggleSelect
+}) {
   const {
     attributes,
     listeners,
@@ -16,16 +24,22 @@ export default function SortableTokenCard({ token, currentTime, onCopy, onDelete
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
-    cursor: isDragging ? 'grabbing' : 'grab'
+    cursor: selectionMode ? 'pointer' : isDragging ? 'grabbing' : 'grab'
   }
 
+  // 在选择模式下禁用拖拽
+  const dragListeners = selectionMode ? {} : listeners
+
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+    <div ref={setNodeRef} style={style} {...attributes} {...dragListeners}>
       <TokenCard
         token={token}
         currentTime={currentTime}
         onCopy={onCopy}
         onDelete={onDelete}
+        selectionMode={selectionMode}
+        isSelected={isSelected}
+        onToggleSelect={onToggleSelect}
       />
     </div>
   )

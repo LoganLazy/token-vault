@@ -57,7 +57,8 @@ export const KEYBOARD_SHORTCUTS = [
       { keys: ['Ctrl', 'N'], description: '添加新账号', mac: ['⌘', 'N'] },
       { keys: ['Ctrl', 'B'], description: '打开备份窗口', mac: ['⌘', 'B'] },
       { keys: ['Ctrl', ','], description: '打开设置', mac: ['⌘', ','] },
-      { keys: ['Escape'], description: '关闭弹窗', mac: ['Esc'] }
+      { keys: ['Ctrl', 'A'], description: '批量操作模式', mac: ['⌘', 'A'] },
+      { keys: ['Escape'], description: '关闭弹窗/取消选择', mac: ['Esc'] }
     ]
   },
   {

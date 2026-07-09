@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Shield, Search, Menu, X, Sun, Moon, Lock, LockOpen, Download, Upload, Settings, Keyboard } from 'lucide-react'
+import { Plus, Shield, Search, Menu, X, Sun, Moon, Lock, LockOpen, Download, Upload, Settings, Keyboard, CheckSquare } from 'lucide-react'
 import * as OTPAuth from 'otpauth'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { arrayMove, SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
@@ -12,6 +12,7 @@ import SettingsModal from './components/SettingsModal'
 import SessionTimeoutWarning from './components/SessionTimeoutWarning'
 import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp'
 import PWAInstallPrompt from './components/PWAInstallPrompt'
+import BatchActionsBar from './components/BatchActionsBar'
 import { categories } from './utils/services'
 import { useSessionTimeout } from './utils/sessionTimeout'
 import { useKeyboardShortcuts } from './utils/keyboardShortcuts'
@@ -41,6 +42,8 @@ function App() {
   const [settings, setSettings] = useState({
     timeoutMinutes: 15
   })
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedTokens, setSelectedTokens] = useState([])
 
   const searchInputRef = useRef(null)
 
@@ -135,11 +138,15 @@ function App() {
     'Ctrl+D': () => {
       toggleDarkMode()
     },
+    'Ctrl+A': () => {
+      if (!isLocked && tokens.length > 0) toggleSelectionMode()
+    },
     'Escape': () => {
       if (isAddModalOpen) setIsAddModalOpen(false)
       if (isBackupModalOpen) setIsBackupModalOpen(false)
       if (isSettingsModalOpen) setIsSettingsModalOpen(false)
       if (isShortcutsHelpOpen) setIsShortcutsHelpOpen(false)
+      if (selectionMode) cancelSelection()
     },
     '?': () => {
       setIsShortcutsHelpOpen(true)
@@ -193,6 +200,48 @@ function App() {
 
       return arrayMove(items, oldIndex, newIndex)
     })
+  }
+
+  // 批量操作相关函数
+  const toggleSelectionMode = () => {
+    setSelectionMode(!selectionMode)
+    setSelectedTokens([])
+  }
+
+  const toggleTokenSelection = (tokenId) => {
+    setSelectedTokens(prev =>
+      prev.includes(tokenId)
+        ? prev.filter(id => id !== tokenId)
+        : [...prev, tokenId]
+    )
+  }
+
+  const handleBatchDelete = () => {
+    if (selectedTokens.length === 0) return
+
+    const confirmed = window.confirm(`确定要删除 ${selectedTokens.length} 个账号吗？此操作无法撤销。`)
+    if (confirmed) {
+      setTokens(tokens.filter(t => !selectedTokens.includes(t.id)))
+      setSelectedTokens([])
+      setSelectionMode(false)
+    }
+  }
+
+  const handleBatchMove = (categoryId) => {
+    if (selectedTokens.length === 0) return
+
+    setTokens(tokens.map(t =>
+      selectedTokens.includes(t.id)
+        ? { ...t, category: categoryId }
+        : t
+    ))
+    setSelectedTokens([])
+    setSelectionMode(false)
+  }
+
+  const cancelSelection = () => {
+    setSelectionMode(false)
+    setSelectedTokens([])
   }
 
   // Check if app needs to be unlocked on startup
@@ -388,6 +437,19 @@ function App() {
 
               {/* Desktop Actions */}
               <div className="hidden sm:flex items-center gap-2">
+                {tokens.length > 0 && !isLocked && (
+                  <button
+                    onClick={toggleSelectionMode}
+                    className={`p-2 transition-colors ${
+                      selectionMode
+                        ? 'text-terracotta'
+                        : 'text-muted hover:text-terracotta'
+                    }`}
+                    title="批量操作 (Ctrl+A)"
+                  >
+                    <CheckSquare className="w-5 h-5" />
+                  </button>
+                )}
                 <button
                   onClick={() => setIsShortcutsHelpOpen(true)}
                   className="p-2 text-muted hover:text-terracotta transition-colors"
@@ -458,6 +520,18 @@ function App() {
           {/* Mobile Menu */}
           {showMenu && (
             <div className="sm:hidden mt-4 pb-2 border-t border-border pt-4 space-y-2">
+              {tokens.length > 0 && !isLocked && (
+                <button
+                  onClick={() => {
+                    toggleSelectionMode()
+                    setShowMenu(false)
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-muted hover:text-terracotta hover:bg-terracotta-tint rounded-lg transition-colors"
+                >
+                  <CheckSquare className="w-5 h-5" />
+                  <span>批量操作</span>
+                </button>
+              )}
               <button
                 onClick={() => {
                   setIsSettingsModalOpen(true)
@@ -602,6 +676,9 @@ function App() {
                     currentTime={currentTime}
                     onCopy={copyCode}
                     onDelete={deleteToken}
+                    selectionMode={selectionMode}
+                    isSelected={selectedTokens.includes(token.id)}
+                    onToggleSelect={toggleTokenSelection}
                   />
                 ))}
               </div>
@@ -656,6 +733,17 @@ function App() {
 
       {/* PWA Install Prompt */}
       <PWAInstallPrompt />
+
+      {/* Batch Actions Bar */}
+      {selectionMode && selectedTokens.length > 0 && (
+        <BatchActionsBar
+          selectedCount={selectedTokens.length}
+          onDelete={handleBatchDelete}
+          onMove={handleBatchMove}
+          onCancel={cancelSelection}
+          categories={categories}
+        />
+      )}
     </div>
   )
 }
