@@ -8,9 +8,11 @@ import MasterPasswordModal from './components/MasterPasswordModal'
 import SettingsModal from './components/SettingsModal'
 import SessionTimeoutWarning from './components/SessionTimeoutWarning'
 import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp'
+import PWAInstallPrompt from './components/PWAInstallPrompt'
 import { categories } from './utils/services'
 import { useSessionTimeout } from './utils/sessionTimeout'
 import { useKeyboardShortcuts } from './utils/keyboardShortcuts'
+import { registerServiceWorker } from './utils/pwa'
 import {
   hasMasterPassword,
   hasEncryptedData,
@@ -65,6 +67,25 @@ function App() {
       } catch (e) {
         console.error('Failed to load settings:', e)
       }
+    }
+  }, [])
+
+  // 注册 PWA Service Worker
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'production') {
+      registerServiceWorker()
+    }
+
+    // 监听 Service Worker 更新
+    const handleSWUpdate = (event) => {
+      console.log('Service Worker update available:', event.detail)
+      // 可以在这里显示更新提示
+    }
+
+    window.addEventListener('sw-update-available', handleSWUpdate)
+
+    return () => {
+      window.removeEventListener('sw-update-available', handleSWUpdate)
     }
   }, [])
 
@@ -587,6 +608,9 @@ function App() {
           onExtend={resetActivity}
         />
       )}
+
+      {/* PWA Install Prompt */}
+      <PWAInstallPrompt />
     </div>
   )
 }
