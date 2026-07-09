@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Settings, Clock, Fingerprint, CheckCircle, XCircle } from 'lucide-react'
+import { X, Settings, Clock, Fingerprint, CheckCircle, XCircle, Globe } from 'lucide-react'
 import { TIMEOUT_OPTIONS } from '../utils/sessionTimeout'
 import { hasMasterPassword } from '../utils/encryption'
 import {
@@ -9,9 +9,11 @@ import {
   deleteCredential,
   getDeviceTypeDescription
 } from '../utils/webauthn'
+import { getCurrentLanguage, setLanguage, LANGUAGES } from '../utils/i18n'
 
 export default function SettingsModal({ onClose, settings, onSave }) {
   const [timeoutMinutes, setTimeoutMinutes] = useState(settings.timeoutMinutes || 15)
+  const [language, setLanguageState] = useState(getCurrentLanguage())
   const [webauthnSupported, setWebauthnSupported] = useState(false)
   const [webauthnEnabled, setWebauthnEnabled] = useState(false)
   const [biometricLoading, setBiometricLoading] = useState(false)
@@ -52,7 +54,10 @@ export default function SettingsModal({ onClose, settings, onSave }) {
 
   const handleSave = () => {
     onSave({ timeoutMinutes })
+    setLanguage(language)
     onClose()
+    // 刷新页面以应用语言
+    window.location.reload()
   }
 
   return (
@@ -103,6 +108,33 @@ export default function SettingsModal({ onClose, settings, onSave }) {
                 ⚠️ 禁用自动锁定会降低安全性，仅建议在私人设备上使用
               </p>
             )}
+          </div>
+
+          {/* 语言设置 */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Globe className="w-5 h-5 text-terracotta" />
+              <label className="text-sm font-medium text-ink dark:text-surface">
+                语言 / Language
+              </label>
+            </div>
+            <p className="text-xs text-muted mb-3">
+              选择应用界面语言 / Choose your preferred language
+            </p>
+            <select
+              value={language}
+              onChange={(e) => setLanguageState(e.target.value)}
+              className="w-full px-4 py-2.5 border border-border rounded-xl focus:outline-none focus:border-terracotta transition-colors dark:bg-ink dark:text-surface"
+            >
+              {Object.entries(LANGUAGES).map(([code, name]) => (
+                <option key={code} value={code}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted mt-2">
+              💡 保存后将刷新页面以应用新语言 / Page will refresh to apply new language
+            </p>
           </div>
 
           {/* 生物识别设置 */}
