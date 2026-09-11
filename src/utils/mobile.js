@@ -16,6 +16,45 @@ export function vibrate(pattern = [10]) {
 }
 
 /**
+ * 增强的振动反馈模式
+ */
+export const VibratePatterns = {
+  light: [10],              // 轻触 - 复制
+  medium: [15],             // 中等 - 删除单个
+  heavy: [20, 50, 20],      // 重 - 批量删除
+  success: [10, 30, 10],    // 成功 - 操作完成
+  error: [50, 50, 50],      // 错误 - 失败
+  warning: [30, 100, 30],   // 警告
+}
+
+/**
+ * 语义化的振动函数
+ */
+export function vibrateLight() {
+  vibrate(VibratePatterns.light)
+}
+
+export function vibrateMedium() {
+  vibrate(VibratePatterns.medium)
+}
+
+export function vibrateHeavy() {
+  vibrate(VibratePatterns.heavy)
+}
+
+export function vibrateSuccess() {
+  vibrate(VibratePatterns.success)
+}
+
+export function vibrateError() {
+  vibrate(VibratePatterns.error)
+}
+
+export function vibrateWarning() {
+  vibrate(VibratePatterns.warning)
+}
+
+/**
  * 检测是否为移动设备
  */
 export function isMobileDevice() {

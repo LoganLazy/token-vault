@@ -1,4 +1,4 @@
-# TOTP Hub 使用指南
+# Token Vault 使用指南
 
 ## 快速开始
 

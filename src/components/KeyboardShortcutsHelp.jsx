@@ -1,5 +1,5 @@
 import { X, Keyboard } from 'lucide-react'
-import { KEYBOARD_SHORTCUTS, formatShortcut } from '../utils/keyboardShortcuts'
+import { KEYBOARD_SHORTCUTS } from '../utils/keyboardShortcuts'
 
 export default function KeyboardShortcutsHelp({ onClose }) {
   const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0

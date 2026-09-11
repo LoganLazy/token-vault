@@ -1,63 +1,13 @@
-import { useState, useEffect } from 'react'
-import { X, Settings, Clock, Fingerprint, CheckCircle, XCircle, Globe } from 'lucide-react'
+import { useState } from 'react'
+import { X, Settings, Clock, Globe } from 'lucide-react'
 import { TIMEOUT_OPTIONS } from '../utils/sessionTimeout'
-import { hasMasterPassword } from '../utils/encryption'
-import {
-  isPlatformAuthenticatorAvailable,
-  isWebAuthnEnabled,
-  registerCredential,
-  deleteCredential,
-  getDeviceTypeDescription
-} from '../utils/webauthn'
-import { getCurrentLanguage, setLanguage, LANGUAGES } from '../utils/i18n'
 
 export default function SettingsModal({ onClose, settings, onSave }) {
   const [timeoutMinutes, setTimeoutMinutes] = useState(settings.timeoutMinutes || 15)
-  const [language, setLanguageState] = useState(getCurrentLanguage())
-  const [webauthnSupported, setWebauthnSupported] = useState(false)
-  const [webauthnEnabled, setWebauthnEnabled] = useState(false)
-  const [biometricLoading, setBiometricLoading] = useState(false)
-
-  useEffect(() => {
-    const checkWebAuthn = async () => {
-      if (hasMasterPassword()) {
-        const supported = await isPlatformAuthenticatorAvailable()
-        setWebauthnSupported(supported)
-        setWebauthnEnabled(isWebAuthnEnabled())
-      }
-    }
-    checkWebAuthn()
-  }, [])
-
-  const handleToggleBiometric = async () => {
-    if (webauthnEnabled) {
-      // 禁用生物识别
-      const confirmed = window.confirm('确定要禁用生物识别解锁吗？')
-      if (confirmed) {
-        deleteCredential()
-        setWebauthnEnabled(false)
-      }
-    } else {
-      // 启用生物识别
-      setBiometricLoading(true)
-      try {
-        await registerCredential()
-        setWebauthnEnabled(true)
-        alert('✅ 生物识别已启用！')
-      } catch (err) {
-        alert('❌ ' + err.message)
-      } finally {
-        setBiometricLoading(false)
-      }
-    }
-  }
-
+  const [autoTheme, setAutoTheme] = useState(settings.autoTheme || false)
   const handleSave = () => {
-    onSave({ timeoutMinutes })
-    setLanguage(language)
+    onSave({ timeoutMinutes, autoTheme })
     onClose()
-    // 刷新页面以应用语言
-    window.location.reload()
   }
 
   return (
@@ -110,90 +60,33 @@ export default function SettingsModal({ onClose, settings, onSave }) {
             )}
           </div>
 
-          {/* 语言设置 */}
+          {/* 暗色模式设置 */}
           <div>
             <div className="flex items-center gap-2 mb-3">
               <Globe className="w-5 h-5 text-terracotta" />
               <label className="text-sm font-medium text-ink dark:text-surface">
-                语言 / Language
+                暗色模式
               </label>
             </div>
             <p className="text-xs text-muted mb-3">
-              选择应用界面语言 / Choose your preferred language
+              跟随系统自动切换明暗主题
             </p>
-            <select
-              value={language}
-              onChange={(e) => setLanguageState(e.target.value)}
-              className="w-full px-4 py-2.5 border border-border rounded-xl focus:outline-none focus:border-terracotta transition-colors dark:bg-ink dark:text-surface"
-            >
-              {Object.entries(LANGUAGES).map(([code, name]) => (
-                <option key={code} value={code}>
-                  {name}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-muted mt-2">
-              💡 保存后将刷新页面以应用新语言 / Page will refresh to apply new language
-            </p>
+            <label className="flex items-center justify-between p-3 bg-surface dark:bg-ink rounded-xl border border-border cursor-pointer hover:border-terracotta transition-colors">
+              <span className="text-sm text-ink dark:text-surface">跟随系统</span>
+              <input
+                type="checkbox"
+                checked={autoTheme}
+                onChange={(e) => setAutoTheme(e.target.checked)}
+                className="w-5 h-5 text-terracotta rounded focus:ring-terracotta"
+              />
+            </label>
+            {!autoTheme && (
+              <p className="text-xs text-muted mt-2">
+                💡 关闭后可通过右上角按钮手动切换
+              </p>
+            )}
           </div>
 
-          {/* 生物识别设置 */}
-          {hasMasterPassword() && (
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <Fingerprint className="w-5 h-5 text-terracotta" />
-                <label className="text-sm font-medium text-ink dark:text-surface">
-                  生物识别解锁
-                </label>
-              </div>
-              <p className="text-xs text-muted mb-3">
-                使用 {getDeviceTypeDescription()} 快速解锁应用
-              </p>
-
-              {webauthnSupported ? (
-                <div className="space-y-3">
-                  {/* 状态显示 */}
-                  <div className="flex items-center justify-between p-3 bg-surface dark:bg-ink rounded-xl border border-border">
-                    <div className="flex items-center gap-2">
-                      {webauthnEnabled ? (
-                        <>
-                          <CheckCircle className="w-4 h-4 text-green-500" />
-                          <span className="text-sm text-ink dark:text-surface">已启用</span>
-                        </>
-                      ) : (
-                        <>
-                          <XCircle className="w-4 h-4 text-muted" />
-                          <span className="text-sm text-muted">未启用</span>
-                        </>
-                      )}
-                    </div>
-                    <button
-                      onClick={handleToggleBiometric}
-                      disabled={biometricLoading}
-                      className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                        webauthnEnabled
-                          ? 'bg-red-500 hover:bg-red-600 text-white'
-                          : 'bg-terracotta hover:bg-terracotta-hover text-white'
-                      } disabled:opacity-50`}
-                    >
-                      {biometricLoading ? '处理中...' : webauthnEnabled ? '禁用' : '启用'}
-                    </button>
-                  </div>
-
-                  {/* 提示信息 */}
-                  <p className="text-xs text-muted">
-                    💡 启用后，下次解锁时可使用生物识别，无需输入密码
-                  </p>
-                </div>
-              ) : (
-                <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
-                  <p className="text-xs text-amber-600 dark:text-amber-400">
-                    ⚠️ 您的设备或浏览器不支持生物识别功能
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         {/* Save Button */}

@@ -3,6 +3,8 @@
  * 支持中文和英文
  */
 
+import { useState } from 'react'
+
 export const LANGUAGES = {
   'zh-CN': '简体中文',
   'en-US': 'English'
@@ -11,7 +13,7 @@ export const LANGUAGES = {
 export const translations = {
   'zh-CN': {
     // 通用
-    'app.name': 'TOTP Hub',
+    'app.name': 'Token Vault',
     'app.tagline': '安全便捷的两步验证码管理工具',
     'common.close': '关闭',
     'common.cancel': '取消',
@@ -40,7 +42,7 @@ export const translations = {
     'category.work': '工作',
     'category.finance': '金融',
     'category.social': '社交',
-    'category.dev': '开发',
+    'category.gaming': '游戏',
     'category.other': '其他',
 
     // Token 卡片
@@ -154,7 +156,7 @@ export const translations = {
 
   'en-US': {
     // Common
-    'app.name': 'TOTP Hub',
+    'app.name': 'Token Vault',
     'app.tagline': 'Secure and convenient TOTP manager',
     'common.close': 'Close',
     'common.cancel': 'Cancel',
@@ -184,6 +186,7 @@ export const translations = {
     'category.finance': 'Finance',
     'category.social': 'Social',
     'category.dev': 'Development',
+    'category.gaming': 'Gaming',
     'category.other': 'Other',
 
     // Token Card
@@ -343,11 +346,20 @@ export function t(key, params = {}) {
  * React Hook for translations
  */
 export function useTranslation() {
+  const [, forceUpdate] = useState(0)
   const lang = getCurrentLanguage()
+
+  const changeLang = (newLang) => {
+    if (setLanguage(newLang)) {
+      forceUpdate(prev => prev + 1) // 强制重新渲染
+      return true
+    }
+    return false
+  }
 
   return {
     t: (key, params) => t(key, params),
     lang,
-    setLang: setLanguage
+    setLang: changeLang
   }
 }

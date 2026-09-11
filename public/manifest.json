@@ -1,13 +1,17 @@
 {
-  "name": "TOTP Hub - 企业级两步验证码管理",
-  "short_name": "TOTP Hub",
-  "description": "安全便捷的两步验证码管理工具，支持企业级加密保护",
+  "name": "Token Vault - 两步验证码管理",
+  "short_name": "Token Vault",
+  "description": "安全便捷的两步验证码管理工具，支持本地加密和可选的私有同步",
+  "id": "/",
   "start_url": "/",
+  "scope": "/",
+  "lang": "zh-CN",
   "display": "standalone",
   "background_color": "#F7F4EF",
   "theme_color": "#C4612F",
   "orientation": "portrait-primary",
   "categories": ["productivity", "utilities", "security"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/icon-72.png",
@@ -82,32 +86,6 @@
       "sizes": "1280x720",
       "type": "image/png",
       "form_factor": "wide"
-    }
-  ],
-  "shortcuts": [
-    {
-      "name": "添加账号",
-      "short_name": "添加",
-      "description": "快速添加新的两步验证账号",
-      "url": "/?action=add",
-      "icons": [
-        {
-          "src": "/icon-shortcut-add.png",
-          "sizes": "96x96"
-        }
-      ]
-    },
-    {
-      "name": "备份数据",
-      "short_name": "备份",
-      "description": "导出备份文件",
-      "url": "/?action=backup",
-      "icons": [
-        {
-          "src": "/icon-shortcut-backup.png",
-          "sizes": "96x96"
-        }
-      ]
     }
   ]
 }

@@ -64,16 +64,25 @@ export async function registerCredential(userId = 'totp-hub-user') {
   try {
     const challenge = crypto.getRandomValues(new Uint8Array(32))
 
+    // 获取有效的 RP ID（支持 localhost 和 127.0.0.1）
+    const getRpId = () => {
+      const hostname = window.location.hostname
+      if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        return 'localhost'
+      }
+      return hostname
+    }
+
     const publicKeyCredentialCreationOptions = {
       challenge: challenge,
       rp: {
-        name: 'TOTP Hub',
-        id: window.location.hostname === 'localhost' ? 'localhost' : window.location.hostname
+        name: 'Token Vault',
+        id: getRpId()
       },
       user: {
         id: new TextEncoder().encode(userId),
         name: userId,
-        displayName: 'TOTP Hub User'
+        displayName: 'Token Vault User'
       },
       pubKeyCredParams: [
         { alg: -7, type: 'public-key' },   // ES256 (推荐)

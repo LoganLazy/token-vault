@@ -1,0 +1,20 @@
+services:
+  token-vault:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: token-vault
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+    labels:
+      - "com.token-vault.description=Token Vault - TOTP 验证码管理"
+      - "com.token-vault.version=1.4.1"

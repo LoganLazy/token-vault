@@ -46,18 +46,16 @@ const TokenCard = memo(function TokenCard({ token, currentTime, onCopy, onDelete
   }, [currentTime, token])
 
   const handleCopy = async () => {
-    await onCopy(code)
+    await onCopy(code, token.id)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
 
   const progress = (timeLeft / (token.period || 30)) * 100
-  const serviceIcon = getServiceIcon(token.issuer)
-  const category = getCategoryById(token.category)
 
   return (
     <div
-      className={`bg-white dark:bg-surface rounded-xl sm:rounded-2xl p-4 sm:p-6 border transition-all ${
+      className={`relative bg-white dark:bg-surface rounded-xl sm:rounded-2xl p-4 sm:p-6 border transition-all touch-feedback ${
         selectionMode
           ? isSelected
             ? 'border-terracotta bg-terracotta/5 dark:bg-terracotta/10'
@@ -103,24 +101,24 @@ const TokenCard = memo(function TokenCard({ token, currentTime, onCopy, onDelete
               </span>
             )}
           </div>
-          <h3 className="text-base sm:text-lg font-normal text-ink dark:text-surface truncate">
+          <h3 className="card-title text-base sm:text-lg font-normal text-ink dark:text-surface truncate">
             <HighlightText text={token.account} highlight={searchQuery} />
           </h3>
         </div>
         {!selectionMode && (
           <button
             onClick={() => onDelete(token.id)}
-            className="text-muted hover:text-terracotta transition-colors p-1 flex-shrink-0"
+            className="touch-target text-muted hover:text-terracotta transition-colors p-2 flex-shrink-0"
             title="删除"
           >
-            <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+            <Trash2 className="w-5 h-5" />
           </button>
         )}
       </div>
 
       {/* Code Display */}
       <div className="mb-3 sm:mb-4">
-        <div className="text-3xl sm:text-4xl font-mono font-light text-ink tracking-wider text-center py-3 sm:py-4">
+        <div className="code-display text-3xl sm:text-4xl font-mono font-light text-ink dark:text-surface tracking-wider text-center py-3 sm:py-4">
           {code.slice(0, 3)} {code.slice(3)}
         </div>
       </div>
@@ -141,7 +139,7 @@ const TokenCard = memo(function TokenCard({ token, currentTime, onCopy, onDelete
       {/* Copy Button */}
       <button
         onClick={handleCopy}
-        className="w-full flex items-center justify-center gap-2 px-4 py-2 sm:py-2.5 bg-terracotta-tint hover:bg-terracotta/10 text-terracotta rounded-full transition-colors font-light text-sm sm:text-base"
+        className="touch-target w-full flex items-center justify-center gap-2 px-4 py-3 bg-terracotta-tint hover:bg-terracotta/10 text-terracotta rounded-full transition-colors font-light text-sm sm:text-base"
       >
         {copied ? (
           <>

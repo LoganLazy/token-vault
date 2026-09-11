@@ -1,14 +1,6 @@
-import { useState, useEffect } from 'react'
-import { X, Lock, AlertCircle, Eye, EyeOff, Fingerprint } from 'lucide-react'
-import { setMasterPassword, verifyMasterPassword, removeMasterPassword, validatePasswordStrength } from '../utils/encryption'
-import {
-  isWebAuthnAvailable,
-  isPlatformAuthenticatorAvailable,
-  authenticateCredential,
-  registerCredential,
-  isWebAuthnEnabled,
-  getDeviceTypeDescription
-} from '../utils/webauthn'
+import { useState } from 'react'
+import { X, Lock, AlertCircle, Eye, EyeOff } from 'lucide-react'
+import { setMasterPassword, verifyMasterPassword, validatePasswordStrength } from '../utils/encryption'
 
 export default function MasterPasswordModal({ mode = 'setup', onClose, onSuccess }) {
   const [password, setPassword] = useState('')
@@ -16,41 +8,7 @@ export default function MasterPasswordModal({ mode = 'setup', onClose, onSuccess
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState(null)
   const [strengthMessage, setStrengthMessage] = useState('')
-  const [webauthnAvailable, setWebauthnAvailable] = useState(false)
-  const [useBiometric, setUseBiometric] = useState(false)
-  const [biometricLoading, setBiometricLoading] = useState(false)
-
-  // 检测 WebAuthn 支持
-  useEffect(() => {
-    const checkWebAuthn = async () => {
-      if (mode === 'verify' && isWebAuthnEnabled()) {
-        const available = await isPlatformAuthenticatorAvailable()
-        setWebauthnAvailable(available)
-        // 如果可用，默认显示生物识别
-        if (available) {
-          setUseBiometric(true)
-        }
-      }
-    }
-    checkWebAuthn()
-  }, [mode])
-
-  // 处理生物识别验证
-  const handleBiometricAuth = async () => {
-    setBiometricLoading(true)
-    setError(null)
-
-    try {
-      await authenticateCredential()
-      // 验证成功
-      onSuccess?.()
-      onClose()
-    } catch (err) {
-      setError(err.message)
-      setBiometricLoading(false)
-    }
-  }
-
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const handlePasswordChange = (value) => {
     setPassword(value)
     setError(null)
@@ -61,62 +19,37 @@ export default function MasterPasswordModal({ mode = 'setup', onClose, onSuccess
     }
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     setError(null)
+    setIsSubmitting(true)
 
-    if (mode === 'setup') {
-      const validation = validatePasswordStrength(password)
-      if (!validation.valid) {
-        setError(validation.message)
-        return
-      }
-
-      if (password !== confirmPassword) {
-        setError('两次输入的密码不一致')
-        return
-      }
-
-      try {
-        setMasterPassword(password)
-        onSuccess?.(password)
+    try {
+      if (mode === 'setup') {
+        const validation = validatePasswordStrength(password)
+        if (!validation.valid) {
+          setError(validation.message)
+          return
+        }
+        if (password !== confirmPassword) {
+          setError('两次输入的密码不一致')
+          return
+        }
+        await setMasterPassword(password)
+        await onSuccess?.(password)
         onClose()
-
-        // 提示设置生物识别
-        setTimeout(async () => {
-          const available = await isPlatformAuthenticatorAvailable()
-          if (available && isWebAuthnAvailable()) {
-            const enableBio = window.confirm(
-              `检测到您的设备支持 ${getDeviceTypeDescription()}。\n\n是否启用生物识别快速解锁？`
-            )
-            if (enableBio) {
-              try {
-                await registerCredential()
-                alert('✅ 生物识别已启用！下次解锁时可使用生物识别。')
-              } catch (err) {
-                console.error('生物识别注册失败:', err)
-              }
-            }
-          }
-        }, 500)
-      } catch (err) {
-        setError(err.message)
+      } else {
+        if (!await verifyMasterPassword(password)) {
+          setError('密码错误')
+          return
+        }
+        await onSuccess?.(password)
+        onClose()
       }
-    } else if (mode === 'verify') {
-      if (!verifyMasterPassword(password)) {
-        setError('密码错误')
-        return
-      }
-      onSuccess?.(password)
-      onClose()
-    } else if (mode === 'remove') {
-      if (!verifyMasterPassword(password)) {
-        setError('密码错误')
-        return
-      }
-      removeMasterPassword()
-      onSuccess?.()
-      onClose()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -160,66 +93,6 @@ export default function MasterPasswordModal({ mode = 'setup', onClose, onSuccess
           </div>
         )}
 
-        {/* 生物识别选项 (仅验证模式) */}
-        {mode === 'verify' && webauthnAvailable && (
-          <div className="mb-6">
-            {useBiometric ? (
-              <>
-                {/* 生物识别按钮 */}
-                <button
-                  type="button"
-                  onClick={handleBiometricAuth}
-                  disabled={biometricLoading}
-                  className="w-full py-4 bg-gradient-to-r from-terracotta to-terracotta-hover text-white rounded-2xl transition-all hover:shadow-lg hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 font-medium"
-                >
-                  {biometricLoading ? (
-                    <>
-                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      验证中...
-                    </>
-                  ) : (
-                    <>
-                      <Fingerprint className="w-6 h-6" />
-                      使用 {getDeviceTypeDescription()} 解锁
-                    </>
-                  )}
-                </button>
-
-                {/* 切换到密码 */}
-                <button
-                  type="button"
-                  onClick={() => setUseBiometric(false)}
-                  className="w-full mt-3 text-sm text-muted hover:text-terracotta transition-colors"
-                >
-                  使用密码解锁
-                </button>
-
-                <div className="mt-4 text-center text-xs text-muted">
-                  或使用下方密码输入框
-                </div>
-              </>
-            ) : (
-              <>
-                {/* 切换到生物识别 */}
-                <button
-                  type="button"
-                  onClick={() => setUseBiometric(true)}
-                  className="w-full py-3 border-2 border-terracotta text-terracotta rounded-xl transition-colors hover:bg-terracotta hover:text-white flex items-center justify-center gap-2"
-                >
-                  <Fingerprint className="w-5 h-5" />
-                  切换到生物识别
-                </button>
-              </>
-            )}
-
-            <div className="my-4 flex items-center gap-3">
-              <div className="flex-1 h-px bg-border" />
-              <span className="text-xs text-muted">或</span>
-              <div className="flex-1 h-px bg-border" />
-            </div>
-          </div>
-        )}
-
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm text-muted mb-1.5">
@@ -230,7 +103,7 @@ export default function MasterPasswordModal({ mode = 'setup', onClose, onSuccess
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => handlePasswordChange(e.target.value)}
-                placeholder={mode === 'setup' ? '至少 8 位，包含大小写字母和数字' : '输入密码'}
+                placeholder={mode === 'setup' ? '至少 12 位，包含大小写字母和数字' : '输入密码'}
                 className="w-full px-4 py-2.5 pr-10 border border-border rounded-xl focus:outline-none focus:border-terracotta transition-colors dark:bg-ink dark:text-surface"
                 required
                 autoFocus
@@ -266,9 +139,10 @@ export default function MasterPasswordModal({ mode = 'setup', onClose, onSuccess
 
           <button
             type="submit"
-            className="w-full px-6 py-3 bg-terracotta hover:bg-terracotta-hover text-white rounded-full transition-colors font-light"
+            disabled={isSubmitting}
+            className="w-full px-6 py-3 bg-terracotta hover:bg-terracotta-hover disabled:opacity-50 text-white rounded-full transition-colors font-light"
           >
-            {mode === 'setup' ? '设置密码并加密数据' : mode === 'verify' ? '解锁' : '移除密码并解密数据'}
+            {isSubmitting ? '处理中...' : mode === 'setup' ? '设置密码并加密数据' : mode === 'verify' ? '解锁' : '移除密码并解密数据'}
           </button>
 
           {mode === 'setup' && (

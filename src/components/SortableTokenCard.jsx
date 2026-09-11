@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import TokenCard from './TokenCard'
+import SwipeableTokenCard from './SwipeableTokenCard'
 
 const SortableTokenCard = memo(function SortableTokenCard({
   token,
@@ -11,7 +11,9 @@ const SortableTokenCard = memo(function SortableTokenCard({
   selectionMode,
   isSelected,
   onToggleSelect,
-  searchQuery
+  searchQuery,
+  onMoveCategory,
+  onEdit
 }) {
   const {
     attributes,
@@ -34,7 +36,7 @@ const SortableTokenCard = memo(function SortableTokenCard({
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...dragListeners}>
-      <TokenCard
+      <SwipeableTokenCard
         token={token}
         currentTime={currentTime}
         onCopy={onCopy}
@@ -43,6 +45,8 @@ const SortableTokenCard = memo(function SortableTokenCard({
         isSelected={isSelected}
         onToggleSelect={onToggleSelect}
         searchQuery={searchQuery}
+        onMoveCategory={onMoveCategory}
+        onEdit={onEdit}
       />
     </div>
   )

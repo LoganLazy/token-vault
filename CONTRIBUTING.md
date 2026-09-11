@@ -1,6 +1,6 @@
 # 贡献指南
 
-感谢您考虑为 TOTP Hub 做出贡献！🎉
+感谢您考虑为 Token Vault 做出贡献！🎉
 
 ## 行为准则
 
@@ -190,7 +190,7 @@ A: 在 `src/utils/services.js` 的 `categories` 数组中添加新分类。
 
 ## 感谢
 
-感谢所有为 TOTP Hub 做出贡献的开发者！ 🙏
+感谢所有为 Token Vault 做出贡献的开发者！ 🙏
 
 ---
 

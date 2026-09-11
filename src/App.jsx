@@ -1,13 +1,13 @@
-import { useState, useEffect, useRef, lazy, Suspense } from 'react'
-import { Plus, Shield, Search, Menu, X, Sun, Moon, Lock, LockOpen, Download, Upload, Settings, Keyboard, CheckSquare, BarChart3 } from 'lucide-react'
+import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react'
+import { Plus, Shield, Search, Menu, X, Sun, Moon, Lock, LockOpen, Download, Upload, Settings, Keyboard, CheckSquare, BarChart3, User } from 'lucide-react'
 import * as OTPAuth from 'otpauth'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { arrayMove, SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
-import TokenCard from './components/TokenCard'
 import SortableTokenCard from './components/SortableTokenCard'
 
 // 懒加载模态框组件
 const AddTokenModal = lazy(() => import('./components/AddTokenModal'))
+const EditTokenModal = lazy(() => import('./components/EditTokenModal'))
 const BackupModal = lazy(() => import('./components/BackupModal'))
 const MasterPasswordModal = lazy(() => import('./components/MasterPasswordModal'))
 const SettingsModal = lazy(() => import('./components/SettingsModal'))
@@ -16,6 +16,8 @@ const KeyboardShortcutsHelp = lazy(() => import('./components/KeyboardShortcutsH
 const PWAInstallPrompt = lazy(() => import('./components/PWAInstallPrompt'))
 const BatchActionsBar = lazy(() => import('./components/BatchActionsBar'))
 const StatsModal = lazy(() => import('./components/StatsModal'))
+const AuthModal = lazy(() => import('./components/AuthModal'))
+const ImportModal = lazy(() => import('./components/ImportModal'))
 
 import Toast from './components/Toast'
 import { categories } from './utils/services'
@@ -24,7 +26,9 @@ import { useKeyboardShortcuts } from './utils/keyboardShortcuts'
 import { registerServiceWorker } from './utils/pwa'
 import { useToast } from './utils/toast'
 import { vibrate } from './utils/mobile'
-import { recordCopy } from './utils/stats'
+import { clearTokenStats, recordCopy } from './utils/stats'
+import { useTranslation } from './utils/i18n'
+import { filterTokensByPinyin } from './utils/pinyinSearch'
 import {
   hasMasterPassword,
   hasEncryptedData,
@@ -32,10 +36,14 @@ import {
   decryptTokens,
   removeMasterPassword
 } from './utils/encryption'
+import { api } from './utils/api'
+import { syncManager } from './utils/sync'
 
 function App() {
   const [tokens, setTokens] = useState([])
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [editingToken, setEditingToken] = useState(null)
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false)
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
   const [isShortcutsHelpOpen, setIsShortcutsHelpOpen] = useState(false)
@@ -54,9 +62,19 @@ function App() {
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedTokens, setSelectedTokens] = useState([])
   const [refreshing, setRefreshing] = useState(false)
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false)
+
+  // 后端认证状态
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
+  const [currentUser, setCurrentUser] = useState(null)
+  const [backendSyncEnabled, setBackendSyncEnabled] = useState(false)
+  const [syncReady, setSyncReady] = useState(false)
+  const [isInitialized, setIsInitialized] = useState(false)
 
   const searchInputRef = useRef(null)
   const toast = useToast()
+  const showToastError = toast.error
+  const { t } = useTranslation()
 
   // 拖拽传感器配置
   const sensors = useSensors(
@@ -140,6 +158,9 @@ function App() {
     'Ctrl+B': () => {
       if (!isLocked) setIsBackupModalOpen(true)
     },
+    'Ctrl+I': () => {
+      if (!isLocked) setIsImportModalOpen(true)
+    },
     'Ctrl+,': () => {
       if (!isLocked) setIsSettingsModalOpen(true)
     },
@@ -155,6 +176,7 @@ function App() {
     'Escape': () => {
       if (isAddModalOpen) setIsAddModalOpen(false)
       if (isBackupModalOpen) setIsBackupModalOpen(false)
+      if (isImportModalOpen) setIsImportModalOpen(false)
       if (isSettingsModalOpen) setIsSettingsModalOpen(false)
       if (isShortcutsHelpOpen) setIsShortcutsHelpOpen(false)
       if (selectionMode) cancelSelection()
@@ -232,10 +254,20 @@ function App() {
 
     const confirmed = window.confirm(`确定要删除 ${selectedTokens.length} 个账号吗？此操作无法撤销。`)
     if (confirmed) {
-      setTokens(tokens.filter(t => !selectedTokens.includes(t.id)))
+      const tokenIdsToDelete = [...selectedTokens]
+      // 清理统计数据
+      tokenIdsToDelete.forEach(id => clearTokenStats(id))
+      setTokens(tokens.filter(t => !tokenIdsToDelete.includes(t.id)))
+      if (backendSyncEnabled && syncReady) {
+        const cloudTokens = tokens.filter(token => tokenIdsToDelete.includes(token.id))
+        Promise.all(cloudTokens.map(token => syncManager.deleteToken(token))).catch(error => {
+          console.error('Failed to delete cloud tokens:', error)
+          toast.error('本地删除成功，云端删除将在下次操作时重试')
+        })
+      }
       setSelectedTokens([])
       setSelectionMode(false)
-      toast.success(`✓ 已删除 ${selectedTokens.length} 个账号`, 2000)
+      toast.success(`✓ 已删除 ${tokenIdsToDelete.length} 个账号`, 2000)
       vibrate([20]) // 批量删除振动
     }
   }
@@ -245,7 +277,7 @@ function App() {
 
     setTokens(tokens.map(t =>
       selectedTokens.includes(t.id)
-        ? { ...t, category: categoryId }
+        ? { ...t, category: categoryId, updatedAt: Date.now() }
         : t
     ))
     const categoryName = categories.find(c => c.id === categoryId)?.name
@@ -273,31 +305,31 @@ function App() {
     }, 800)
   }
 
-  // 下拉刷新手势
-  let touchStartY = 0
-  let touchCurrentY = 0
+  // 下拉刷新手势 - 使用 useRef 管理状态
+  const touchStartYRef = useRef(0)
+  const touchCurrentYRef = useRef(0)
 
   const handleTouchStart = (e) => {
     if (window.scrollY === 0 && !isLocked) {
-      touchStartY = e.touches[0].clientY
+      touchStartYRef.current = e.touches[0].clientY
     }
   }
 
   const handleTouchMove = (e) => {
-    if (touchStartY === 0 || isLocked) return
+    if (touchStartYRef.current === 0 || isLocked) return
 
-    touchCurrentY = e.touches[0].clientY
-    const diff = touchCurrentY - touchStartY
+    touchCurrentYRef.current = e.touches[0].clientY
+    const diff = touchCurrentYRef.current - touchStartYRef.current
 
     if (diff > 100 && !refreshing) {
       handleRefresh()
-      touchStartY = 0
+      touchStartYRef.current = 0
     }
   }
 
   const handleTouchEnd = () => {
-    touchStartY = 0
-    touchCurrentY = 0
+    touchStartYRef.current = 0
+    touchCurrentYRef.current = 0
   }
 
   // Check if app needs to be unlocked on startup
@@ -321,7 +353,92 @@ function App() {
       setDarkMode(true)
       document.documentElement.classList.add('dark')
     }
+
+    // 初始化后端同步
+    initBackendSync(needsUnlock)
+    setIsInitialized(true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // 初始化后端同步
+  const initBackendSync = async (lockedOnStart = false) => {
+    if (api.isAuthenticated()) {
+      try {
+        const userData = await api.getCurrentUser()
+        setCurrentUser(userData.user)
+
+        const syncEnabled = syncManager.initSync()
+        if (syncEnabled && !lockedOnStart) {
+          // 从后端加载令牌
+          const backendTokens = await syncManager.loadFromBackend()
+          if (backendTokens) {
+            const saved = localStorage.getItem('totp-tokens')
+            const localTokens = saved ? JSON.parse(saved) : []
+            setTokens(mergeTokens(localTokens, backendTokens))
+            toast.success('✓ 已从云端加载数据', 2000)
+          }
+          if (backendTokens) setSyncReady(true)
+        }
+        setBackendSyncEnabled(syncEnabled)
+      } catch (error) {
+        console.error('Failed to init backend sync:', error)
+      }
+    }
+  }
+
+  // 处理登录成功
+  const handleAuthSuccess = async (user) => {
+    setCurrentUser(user)
+    syncManager.enableSync()
+
+    // 从后端加载令牌
+    const backendTokens = await syncManager.loadFromBackend()
+    if (backendTokens) {
+      // 合并本地和云端数据
+      const localTokens = tokens
+      const merged = mergeTokens(localTokens, backendTokens)
+      setTokens(merged)
+      toast.success(`✓ 欢迎回来，${user.name}！已加载 ${backendTokens.length} 个账号`, 3000)
+    } else {
+      toast.success(`✓ 欢迎，${user.name}！`, 2000)
+    }
+    setBackendSyncEnabled(true)
+    setSyncReady(Boolean(backendTokens))
+  }
+
+  // 处理登出
+  const handleLogout = async () => {
+    const confirmed = window.confirm('确定要退出登录吗？本地数据将保留。')
+    if (confirmed) {
+      await api.logout()
+      setCurrentUser(null)
+      setBackendSyncEnabled(false)
+      setSyncReady(false)
+      syncManager.disableSync()
+      toast.success('✓ 已退出登录', 2000)
+    }
+  }
+
+  // 合并本地和云端令牌（去重）
+  const mergeTokens = (localTokens, backendTokens) => {
+    const map = new Map()
+
+    // 先添加后端令牌
+    backendTokens.forEach(t => {
+      map.set(syncManager.tokenKey(t), t)
+    })
+
+    // 再添加本地令牌（如果不存在）
+    localTokens.forEach(t => {
+      const key = syncManager.tokenKey(t)
+      const backendToken = map.get(key)
+      if (!backendToken || Number(t.updatedAt || 0) > Number(backendToken.updatedAt || 0)) {
+        map.set(key, backendToken ? { ...t, backendId: backendToken.backendId } : t)
+      }
+    })
+
+    return Array.from(map.values())
+  }
 
   // Load unencrypted tokens (legacy or no master password)
   const loadUnencryptedTokens = () => {
@@ -336,13 +453,19 @@ function App() {
   }
 
   // Handle unlock with master password
-  const handleUnlock = (password) => {
+  const handleUnlock = async (password) => {
     try {
-      const decrypted = decryptTokens(password)
+      const decrypted = await decryptTokens(password)
       if (decrypted) {
         setTokens(decrypted)
         setCurrentPassword(password)
         setIsLocked(false)
+        if (syncManager.isSyncEnabled()) {
+          const backendTokens = await syncManager.loadFromBackend()
+          if (backendTokens) setTokens(mergeTokens(decrypted, backendTokens))
+          setBackendSyncEnabled(true)
+          setSyncReady(Boolean(backendTokens))
+        }
       }
     } catch (e) {
       alert('解锁失败: ' + e.message)
@@ -356,16 +479,29 @@ function App() {
 
   // Save tokens (encrypted or unencrypted based on master password)
   useEffect(() => {
-    if (isLocked) return // Don't save when locked
+    if (!isInitialized || isLocked) return
 
     if (hasMasterPassword() && currentPassword) {
       // Save encrypted
-      encryptTokens(tokens, currentPassword)
+      encryptTokens(tokens, currentPassword).catch(error => {
+        console.error('Failed to save encrypted vault:', error)
+        showToastError('加密保存失败，请立即导出备份')
+      })
     } else {
       // Save unencrypted (legacy)
       localStorage.setItem('totp-tokens', JSON.stringify(tokens))
     }
-  }, [tokens, isLocked, currentPassword])
+
+    // 同步到后端
+    if (backendSyncEnabled && syncReady) {
+      const timer = window.setTimeout(() => {
+        syncManager.syncToBackend(tokens).catch(err => {
+          console.error('Background sync failed:', err)
+        })
+      }, 500)
+      return () => window.clearTimeout(timer)
+    }
+  }, [tokens, isInitialized, isLocked, currentPassword, backendSyncEnabled, syncReady, showToastError])
 
   // Update time every second for TOTP refresh
   useEffect(() => {
@@ -384,12 +520,60 @@ function App() {
     setTokens([...tokens, newToken])
     setIsAddModalOpen(false)
     toast.success('✓ 账号添加成功', 2000)
+
+  }
+
+  // 批量导入账号
+  const handleImportTokens = (importedTokens) => {
+    if (!importedTokens || importedTokens.length === 0) {
+      toast.error('没有要导入的账号', 2000)
+      return
+    }
+
+    // 添加 ID 和时间戳
+    const newTokens = importedTokens.map(token => ({
+      ...token,
+      id: token.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      createdAt: token.createdAt || Date.now()
+    }))
+
+    setTokens([...tokens, ...newTokens])
+    setIsImportModalOpen(false)
+    toast.success(`✓ 成功导入 ${newTokens.length} 个账号`, 2000)
+    vibrate([10, 50, 10]) // 成功振动
+
   }
 
   const deleteToken = (id) => {
+    const tokenToDelete = tokens.find(token => token.id === id)
     setTokens(tokens.filter(t => t.id !== id))
+    // 清理对应的统计数据
+    clearTokenStats(id)
     toast.success('✓ 账号已删除', 2000)
     vibrate([15]) // 删除振动
+
+    // 从后端删除
+    if (backendSyncEnabled) {
+      syncManager.deleteToken(tokenToDelete || id).catch(err => {
+        console.error('Failed to delete token from backend:', err)
+      })
+    }
+  }
+
+  // 编辑账号
+  const handleEditToken = (token) => {
+    setEditingToken(token)
+    setIsEditModalOpen(true)
+  }
+
+  // 更新账号
+  const handleUpdateToken = (updatedToken) => {
+    const nextToken = { ...updatedToken, updatedAt: Date.now() }
+    setTokens(tokens.map(t => t.id === nextToken.id ? nextToken : t))
+    setIsEditModalOpen(false)
+    setEditingToken(null)
+    toast.success('✓ 账号已更新', 2000)
+
   }
 
   const copyCode = async (code, tokenId) => {
@@ -420,32 +604,58 @@ function App() {
     }
   }
 
+  useEffect(() => {
+    if (!settings.autoTheme) return undefined
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    const applySystemTheme = (matches) => {
+      setDarkMode(matches)
+      document.documentElement.classList.toggle('dark', matches)
+    }
+    const handleChange = event => applySystemTheme(event.matches)
+
+    applySystemTheme(mediaQuery.matches)
+    mediaQuery.addEventListener('change', handleChange)
+    return () => mediaQuery.removeEventListener('change', handleChange)
+  }, [settings.autoTheme])
+
   const handleImportBackup = (importedTokens) => {
     setTokens(importedTokens)
     setIsBackupModalOpen(false)
   }
 
   // Handle setting up master password
-  const handleSetupMasterPassword = (password) => {
+  const handleSetupMasterPassword = async (password) => {
     // Encrypt all current tokens
-    encryptTokens(tokens, password)
+    await encryptTokens(tokens, password)
     setCurrentPassword(password)
     alert('主密码设置成功！您的数据已加密保护。')
   }
 
   // Handle removing master password
-  const handleRemoveMasterPassword = () => {
-    // Decrypt and save as plain text
-    if (currentPassword) {
-      const decrypted = decryptTokens(currentPassword)
-      if (decrypted) {
-        setTokens(decrypted)
-        localStorage.setItem('totp-tokens', JSON.stringify(decrypted))
+  const handleRemoveMasterPassword = async (verifiedPassword) => {
+    try {
+      const password = verifiedPassword || currentPassword
+      if (!password) {
+        throw new Error('无法获取当前密码')
       }
+
+      const decrypted = await decryptTokens(password)
+      if (!decrypted) {
+        throw new Error('解密失败，无法获取数据')
+      }
+
+      // Persist the plaintext copy before removing the only encrypted copy.
+      localStorage.setItem('totp-tokens', JSON.stringify(decrypted))
+      removeMasterPassword()
+      setCurrentPassword(null)
+      setTokens(decrypted)
+
+      toast.success('✓ 主密码已移除，数据已解密', 2000)
+    } catch (error) {
+      console.error('Remove master password failed:', error)
+      toast.error(`移除失败: ${error.message}`)
     }
-    removeMasterPassword()
-    setCurrentPassword(null)
-    alert('主密码已移除，数据已解密为明文存储。')
   }
 
   // Manual lock function
@@ -462,13 +672,12 @@ function App() {
   }
 
   // Filter tokens
-  const filteredTokens = tokens.filter(token => {
-    const matchesSearch =
-      token.issuer?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      token.account?.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesCategory = selectedCategory === 'all' || token.category === selectedCategory
-    return matchesSearch && matchesCategory
-  })
+  const filteredTokens = useMemo(() => {
+    const searchMatches = filterTokensByPinyin(tokens, searchQuery.trim())
+    return searchMatches.filter(token => (
+      selectedCategory === 'all' || token.category === selectedCategory
+    ))
+  }, [tokens, searchQuery, selectedCategory])
 
   return (
     <div
@@ -493,15 +702,15 @@ function App() {
                 <Shield className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
               </div>
               <h1 className="text-lg sm:text-2xl font-light text-ink dark:text-surface tracking-tight">
-                TOTP Hub
+                {t('app.name')}
               </h1>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 sm:gap-2">
               {/* Dark Mode Toggle */}
               <button
                 onClick={toggleDarkMode}
-                className="p-2 text-muted hover:text-ink dark:text-surface dark:hover:text-white transition-colors"
+                className="p-1.5 sm:p-2 text-muted hover:text-ink dark:text-surface dark:hover:text-white transition-colors"
                 title={darkMode ? '切换到亮色模式' : '切换到暗色模式'}
               >
                 {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
@@ -510,7 +719,7 @@ function App() {
               {/* Menu Button (Mobile) */}
               <button
                 onClick={() => setShowMenu(!showMenu)}
-                className="sm:hidden p-2 text-muted hover:text-ink dark:text-surface transition-colors"
+                className="sm:hidden p-1.5 text-muted hover:text-ink dark:text-surface transition-colors"
               >
                 {showMenu ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
@@ -558,6 +767,13 @@ function App() {
                 >
                   <Download className="w-5 h-5" />
                 </button>
+                <button
+                  onClick={() => setIsImportModalOpen(true)}
+                  className="p-2 text-muted hover:text-terracotta transition-colors"
+                  title="批量导入 (Ctrl+I)"
+                >
+                  <Upload className="w-5 h-5" />
+                </button>
                 {hasMasterPassword() ? (
                   <>
                     <button
@@ -595,18 +811,64 @@ function App() {
               {/* Add Button */}
               <button
                 onClick={() => setIsAddModalOpen(true)}
-                className="flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-2 sm:py-2.5 bg-terracotta hover:bg-terracotta-hover text-white rounded-full transition-colors font-light text-sm sm:text-base"
+                className="flex items-center justify-center gap-2 w-9 h-9 sm:w-auto sm:h-auto sm:px-6 sm:py-2.5 bg-terracotta hover:bg-terracotta-hover text-white rounded-full transition-colors font-light text-base"
+                title="添加账号"
               >
                 <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
-                <span className="hidden xs:inline">添加账号</span>
-                <span className="xs:hidden">添加</span>
+                <span className="hidden sm:inline">添加账号</span>
               </button>
+
+              {/* Login/User Button */}
+              {currentUser ? (
+                <div className="hidden sm:block relative group">
+                  <button
+                    className="flex items-center gap-2 px-4 py-2 bg-[#F2E3D6] dark:bg-[#3A3835] rounded-full hover:bg-[#E7E1D7] dark:hover:bg-[#4A4845] transition-colors"
+                  >
+                    <User className="w-4 h-4 text-terracotta" />
+                    <span className="text-sm text-muted hidden sm:inline">{currentUser.name}</span>
+                  </button>
+                  <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-[#2A2825] rounded-lg shadow-lg border border-[#E7E1D7] dark:border-[#3A3835] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                    <div className="p-3 border-b border-[#E7E1D7] dark:border-[#3A3835]">
+                      <p className="text-sm font-medium text-[#1F2421] dark:text-[#F7F4EF]">{currentUser.name}</p>
+                      <p className="text-xs text-muted truncate">{currentUser.email}</p>
+                    </div>
+                    <button
+                      onClick={handleLogout}
+                      className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                    >
+                      退出登录
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="hidden sm:flex items-center gap-2 px-4 py-2 bg-[#F2E3D6] dark:bg-[#3A3835] rounded-full hover:bg-terracotta hover:text-white transition-colors text-sm"
+                >
+                  <User className="w-4 h-4" />
+                  <span className="hidden sm:inline">登录</span>
+                </button>
+              )}
             </div>
           </div>
 
           {/* Mobile Menu */}
           {showMenu && (
             <div className="sm:hidden mt-4 pb-2 border-t border-border pt-4 space-y-2">
+              <button
+                onClick={() => {
+                  if (currentUser) {
+                    handleLogout()
+                  } else {
+                    setIsAuthModalOpen(true)
+                  }
+                  setShowMenu(false)
+                }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-muted hover:text-terracotta hover:bg-terracotta-tint rounded-lg transition-colors"
+              >
+                <User className="w-5 h-5" />
+                <span>{currentUser ? '退出登录' : '登录或注册'}</span>
+              </button>
               {tokens.length > 0 && !isLocked && (
                 <button
                   onClick={() => {
@@ -641,6 +903,16 @@ function App() {
               </button>
               <button
                 onClick={() => {
+                  setIsImportModalOpen(true)
+                  setShowMenu(false)
+                }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-muted hover:text-terracotta hover:bg-terracotta-tint rounded-lg transition-colors"
+              >
+                <Upload className="w-5 h-5" />
+                <span>批量导入</span>
+              </button>
+              <button
+                onClick={() => {
                   setIsShortcutsHelpOpen(true)
                   setShowMenu(false)
                 }}
@@ -649,6 +921,13 @@ function App() {
                 <Keyboard className="w-5 h-5" />
                 <span>快捷键</span>
               </button>
+              <a
+                href="/privacy.html"
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-muted hover:text-terracotta hover:bg-terracotta-tint rounded-lg transition-colors"
+              >
+                <Shield className="w-5 h-5" />
+                <span>隐私政策</span>
+              </a>
               {hasMasterPassword() ? (
                 <>
                   <button
@@ -777,6 +1056,7 @@ function App() {
                     currentTime={currentTime}
                     onCopy={copyCode}
                     onDelete={deleteToken}
+                    onEdit={handleEditToken}
                     selectionMode={selectionMode}
                     isSelected={selectedTokens.includes(token.id)}
                     onToggleSelect={toggleTokenSelection}
@@ -789,6 +1069,14 @@ function App() {
         )}
       </main>
 
+      <footer className="max-w-7xl mx-auto px-4 sm:px-6 py-6 text-center text-sm text-muted">
+        <a href="/privacy.html" className="hover:text-terracotta transition-colors">
+          隐私政策
+        </a>
+        <span className="mx-2" aria-hidden="true">·</span>
+        <span>Token Vault v1.4.1</span>
+      </footer>
+
       {/* Modals */}
       {/* Modals with Lazy Loading */}
       <Suspense fallback={null}>
@@ -799,11 +1087,30 @@ function App() {
           />
         )}
 
+        {isEditModalOpen && (
+          <EditTokenModal
+            token={editingToken}
+            onClose={() => {
+              setIsEditModalOpen(false)
+              setEditingToken(null)
+            }}
+            onUpdate={handleUpdateToken}
+          />
+        )}
+
         {isBackupModalOpen && (
           <BackupModal
             tokens={tokens}
             onClose={() => setIsBackupModalOpen(false)}
             onImport={handleImportBackup}
+          />
+        )}
+
+        {isImportModalOpen && (
+          <ImportModal
+            isOpen={isImportModalOpen}
+            onClose={() => setIsImportModalOpen(false)}
+            onImport={handleImportTokens}
           />
         )}
 
@@ -832,6 +1139,14 @@ function App() {
           <StatsModal
             tokens={tokens}
             onClose={() => setIsStatsModalOpen(false)}
+          />
+        )}
+
+        {/* Auth Modal */}
+        {isAuthModalOpen && (
+          <AuthModal
+            onClose={() => setIsAuthModalOpen(false)}
+            onAuthSuccess={handleAuthSuccess}
           />
         )}
 

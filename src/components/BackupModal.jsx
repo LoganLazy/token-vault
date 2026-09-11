@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { X, Upload, Download, Shield, Lock } from 'lucide-react'
+import { X, Upload, Download, Shield, Lock, AlertCircle } from 'lucide-react'
 import { exportBackup, importBackup } from '../utils/encryption'
+import { detectImportFormat, importFromFormat, getSupportedFormats } from '../utils/importFormats'
 
 export default function BackupModal({ tokens, onClose, onImport }) {
   const [importPassword, setImportPassword] = useState('')
@@ -8,10 +9,11 @@ export default function BackupModal({ tokens, onClose, onImport }) {
   const [useEncryption, setUseEncryption] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
+  const [importMode, setImportMode] = useState('backup') // 'backup' or 'advanced'
 
-  const handleExport = () => {
+  const handleExport = async () => {
     try {
-      const backup = exportBackup(tokens, useEncryption ? exportPassword : null)
+      const backup = await exportBackup(tokens, useEncryption ? exportPassword : null)
       const blob = new Blob([backup], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -31,19 +33,51 @@ export default function BackupModal({ tokens, onClose, onImport }) {
     if (!file) return
 
     const reader = new FileReader()
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
-        const imported = importBackup(event.target.result, importPassword || null)
-        onImport(imported)
-        setSuccess(`成功导入 ${imported.length} 个账号`)
-        setTimeout(() => {
-          onClose()
-        }, 1500)
+        const content = event.target.result
+
+        if (importMode === 'backup') {
+          // 标准备份导入
+          const imported = await importBackup(content, importPassword || null)
+          onImport(imported)
+          setSuccess(`成功导入 ${imported.length} 个账号`)
+          setTimeout(() => {
+            onClose()
+          }, 1500)
+        } else {
+          // 智能格式检测
+          const format = detectImportFormat(content)
+
+          if (format === 'unknown' || format === 'unknown-json') {
+            setError('无法识别的导入格式，请检查文件内容')
+            return
+          }
+
+          const imported = importFromFormat(content, format)
+          onImport(imported)
+          setSuccess(`成功从 ${getFormatName(format)} 导入 ${imported.length} 个账号`)
+          setTimeout(() => {
+            onClose()
+          }, 1500)
+        }
       } catch (err) {
         setError(err.message)
       }
     }
     reader.readAsText(file)
+  }
+
+  const getFormatName = (format) => {
+    const formats = {
+      'uri': 'URI',
+      'google-auth': 'Google Authenticator',
+      '2fas': '2FAS',
+      'authy': 'Authy',
+      'microsoft-auth': 'Microsoft Authenticator',
+      'totp-hub': 'Token Vault'
+    }
+    return formats[format] || format
   }
 
   return (
@@ -125,27 +159,92 @@ export default function BackupModal({ tokens, onClose, onImport }) {
             <h3 className="font-normal text-ink">导入备份</h3>
           </div>
           <p className="text-sm text-muted mb-4">
-            从 JSON 文件恢复账号（会覆盖现有数据）
+            从备份文件或其他应用恢复账号（会覆盖现有数据）
           </p>
 
-          <input
-            type="password"
-            value={importPassword}
-            onChange={(e) => setImportPassword(e.target.value)}
-            placeholder="如果备份已加密，请输入密码"
-            className="w-full px-3 py-2 mb-3 text-sm border border-border rounded-lg focus:outline-none focus:border-terracotta"
-          />
+          {/* 导入模式切换 */}
+          <div className="flex gap-2 mb-3">
+            <button
+              onClick={() => setImportMode('backup')}
+              className={`flex-1 px-3 py-2 text-xs rounded-lg transition-colors ${
+                importMode === 'backup'
+                  ? 'bg-terracotta text-white'
+                  : 'bg-surface border border-border text-muted hover:text-ink'
+              }`}
+            >
+              标准备份
+            </button>
+            <button
+              onClick={() => setImportMode('advanced')}
+              className={`flex-1 px-3 py-2 text-xs rounded-lg transition-colors ${
+                importMode === 'advanced'
+                  ? 'bg-terracotta text-white'
+                  : 'bg-surface border border-border text-muted hover:text-ink'
+              }`}
+            >
+              智能导入
+            </button>
+          </div>
+
+          {/* 密码输入（仅标准备份模式） */}
+          {importMode === 'backup' && (
+            <input
+              type="password"
+              value={importPassword}
+              onChange={(e) => setImportPassword(e.target.value)}
+              placeholder="如果备份已加密，请输入密码"
+              className="w-full px-3 py-2 mb-3 text-sm border border-border rounded-lg focus:outline-none focus:border-terracotta"
+            />
+          )}
+
+          {/* 智能导入说明 */}
+          {importMode === 'advanced' && (
+            <div className="mb-3 p-3 bg-terracotta-tint rounded-lg text-xs text-ink">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-terracotta flex-shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-normal mb-1">支持的格式：</div>
+                  <ul className="text-muted space-y-0.5 ml-4 list-disc">
+                    <li>Google Authenticator 迁移数据</li>
+                    <li>2FAS 导出 JSON</li>
+                    <li>Microsoft Authenticator 备份</li>
+                    <li>标准 otpauth:// URI</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
 
           <label className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border-2 border-terracotta text-terracotta hover:bg-terracotta-tint rounded-full transition-colors cursor-pointer text-sm">
             <Upload className="w-4 h-4" />
-            选择备份文件
+            {importMode === 'backup' ? '选择备份文件' : '选择要导入的文件'}
             <input
               type="file"
-              accept=".json"
+              accept={importMode === 'backup' ? '.json' : '.json,.txt'}
               onChange={handleImport}
               className="hidden"
             />
           </label>
+
+          {/* 支持格式列表 */}
+          {importMode === 'advanced' && (
+            <details className="mt-3">
+              <summary className="text-xs text-muted cursor-pointer hover:text-ink">
+                查看详细支持列表
+              </summary>
+              <div className="mt-2 space-y-2 text-xs">
+                {getSupportedFormats().map(fmt => (
+                  <div key={fmt.id} className="p-2 bg-surface rounded border border-border">
+                    <div className="font-normal text-ink">{fmt.name}</div>
+                    <div className="text-muted mt-0.5">{fmt.description}</div>
+                    {fmt.note && (
+                      <div className="text-terracotta mt-1 text-[10px]">{fmt.note}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
         </div>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { X, Upload, Camera } from 'lucide-react'
 import { categories } from '../utils/services'
-import QRScannerModal from './QRScannerModal'
+import QRScanModal from './QRScanModal'
 
 export default function AddTokenModal({ onClose, onAdd }) {
   const [formData, setFormData] = useState({
@@ -47,23 +47,41 @@ export default function AddTokenModal({ onClose, onAdd }) {
     }
 
     let successCount = 0
-    let failCount = 0
+    const failedUris = []
 
     uris.forEach(uri => {
       try {
         const tokenData = parseUriToData(uri.trim())
-        if (tokenData) {
+        if (tokenData && tokenData.secret) {
           onAdd(tokenData)
           successCount++
+        } else {
+          failedUris.push({ uri, reason: '缺少必要信息' })
         }
       } catch (e) {
         console.error('Failed to parse URI:', uri, e)
-        failCount++
+        failedUris.push({ uri, reason: e.message || '解析失败' })
       }
     })
 
-    alert(`批量导入完成！\n成功: ${successCount} 个\n失败: ${failCount} 个`)
-    onClose()
+    let message = `批量导入完成！\n成功: ${successCount} 个\n失败: ${failedUris.length} 个`
+
+    if (failedUris.length > 0 && failedUris.length <= 5) {
+      message += '\n\n失败的 URI:'
+      failedUris.forEach(({ uri, reason }) => {
+        const shortUri = uri.length > 50 ? uri.substring(0, 50) + '...' : uri
+        message += `\n- ${shortUri}\n  (${reason})`
+      })
+    } else if (failedUris.length > 5) {
+      message += `\n\n(失败的 URI 过多，已记录到控制台)`
+      console.error('Failed URIs:', failedUris)
+    }
+
+    alert(message)
+
+    if (successCount > 0) {
+      onClose()
+    }
   }
 
   const parseUriToData = (uri) => {
@@ -119,17 +137,18 @@ export default function AddTokenModal({ onClose, onAdd }) {
         category: formData.category
       })
     } catch (e) {
+      console.error('Invalid TOTP URI:', e)
       alert('无效的 TOTP URI 格式')
     }
   }
 
-  const handleScanResult = (uri) => {
+  const handleScanResult = (tokenData) => {
     setShowScanner(false)
-    if (uri.startsWith('otpauth://')) {
-      parseUri(uri)
-    } else {
-      alert('扫描的二维码不是有效的 TOTP 格式')
-    }
+    // QRScanModal already parsed the data
+    setFormData({
+      ...tokenData,
+      category: formData.category
+    })
   }
 
   return (
@@ -328,9 +347,9 @@ export default function AddTokenModal({ onClose, onAdd }) {
 
       {/* QR Scanner Modal */}
       {showScanner && (
-        <QRScannerModal
+        <QRScanModal
           onClose={() => setShowScanner(false)}
-          onScan={handleScanResult}
+          onScanSuccess={handleScanResult}
         />
       )}
     </>

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>隐私政策 - Token Vault</title>
+    <style>
+      :root { color-scheme: light dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      body { margin: 0; background: #f7f4ef; color: #1f2421; line-height: 1.7; }
+      main { width: min(720px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 64px; }
+      h1 { margin: 0 0 8px; font-size: 2rem; font-weight: 500; }
+      h2 { margin-top: 32px; font-size: 1.2rem; font-weight: 600; }
+      p, li { color: #5f625f; }
+      a { color: #b6532b; }
+      .meta { margin: 0 0 32px; font-size: .9rem; }
+      .back { display: inline-block; margin-bottom: 28px; }
+      @media (prefers-color-scheme: dark) {
+        body { background: #1f1e1c; color: #f7f4ef; }
+        p, li { color: #c8c4bd; }
+        a { color: #e28a5b; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a class="back" href="/">返回 Token Vault</a>
+      <h1>隐私政策</h1>
+      <p class="meta">生效日期：2026 年 7 月 20 日</p>
+
+      <p>Token Vault 是一个本地优先的 TOTP 验证码管理工具。本政策说明应用如何处理你的数据。</p>
+
+      <h2>本地数据</h2>
+      <p>默认情况下，账号名称、TOTP 密钥、设置和使用统计保存在当前浏览器的本地存储中，不会由应用主动发送给第三方。启用主密码后，保险库使用 PBKDF2-SHA256 和 AES-256-GCM 加密；未启用主密码时，本地数据不会被加密。</p>
+
+      <h2>可选私有同步</h2>
+      <p>登录自托管同步服务后，账号数据会发送到你所连接的 Token Vault 服务端。服务端会加密数据库中的 TOTP 密钥，但同步目前不是端到端加密：服务端在处理请求时能够解密这些密钥。服务的部署者负责服务器、日志、备份和访问控制。</p>
+
+      <h2>摄像头与网络</h2>
+      <p>摄像头仅在你主动选择扫描二维码时使用，图像在设备上解析，不会上传。应用不集成第三方广告或分析服务。安装后的 PWA 会缓存静态资源以支持离线使用，但不会缓存 API 响应或带授权信息的请求。</p>
+
+      <h2>导入、导出与剪贴板</h2>
+      <p>你选择的导入文件在设备上处理。导出的备份由你保管；未选择备份加密时，文件包含明文 TOTP 密钥。复制验证码会将当前验证码写入系统剪贴板。</p>
+
+      <h2>删除数据</h2>
+      <p>你可以在应用中删除单个或全部账号。清除该站点的浏览器数据会删除本地保险库和设置。使用私有同步时，还应在同步服务中删除对应账号或数据；服务端备份的保留周期由部署者决定。</p>
+
+      <h2>安全提示</h2>
+      <p>请使用 HTTPS 部署同步服务，设置强主密码，并妥善保存加密备份。忘记本地主密码后，Token Vault 无法恢复加密数据。</p>
+    </main>
+  </body>
+</html>

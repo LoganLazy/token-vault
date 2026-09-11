@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Download, X } from 'lucide-react'
+import { useTranslation } from '../utils/i18n'
 
 export default function PWAInstallPrompt() {
+  const { t } = useTranslation()
   const [deferredPrompt, setDeferredPrompt] = useState(null)
   const [showPrompt, setShowPrompt] = useState(false)
 
@@ -80,7 +82,7 @@ export default function PWAInstallPrompt() {
           </div>
           <div className="flex-1 pr-6">
             <h3 className="text-base font-medium text-ink dark:text-surface mb-1">
-              安装 TOTP Hub
+              安装 {t('app.name')}
             </h3>
             <p className="text-sm text-muted">
               安装到桌面，像原生应用一样使用。完全离线，更快更安全。

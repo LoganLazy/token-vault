@@ -46,15 +46,18 @@ export function getServiceIcon(issuer) {
   return serviceIcons.default
 }
 
+import { t } from './i18n'
+
 // 分类选项
 export const categories = [
-  { id: 'all', name: '全部', icon: '📋' },
-  { id: 'work', name: '工作', icon: '💼' },
-  { id: 'personal', name: '个人', icon: '👤' },
-  { id: 'finance', name: '金融', icon: '💰' },
-  { id: 'social', name: '社交', icon: '💬' },
-  { id: 'dev', name: '开发', icon: '💻' },
-  { id: 'other', name: '其他', icon: '📌' }
+  { id: 'all', name: () => t('category.all'), icon: '📋' },
+  { id: 'work', name: () => t('category.work'), icon: '💼' },
+  { id: 'personal', name: () => t('category.personal'), icon: '👤' },
+  { id: 'finance', name: () => t('category.finance'), icon: '💰' },
+  { id: 'social', name: () => t('category.social'), icon: '💬' },
+  { id: 'dev', name: () => t('category.dev'), icon: '💻' },
+  { id: 'gaming', name: () => t('category.gaming'), icon: '🎮' },
+  { id: 'other', name: () => t('category.other'), icon: '📌' }
 ]
 
 export function getCategoryById(id) {

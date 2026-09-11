@@ -1,12 +1,18 @@
 import { X, TrendingUp, Award, Clock, BarChart3 } from 'lucide-react'
-import { getStatsSummary, getMostUsedTokens, getRecentlyUsedTokens, formatLastUsed } from '../utils/stats'
+import { BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { getStatsSummary, getMostUsedTokens, getRecentlyUsedTokens, formatLastUsed, getUsageTrend, getCategoryDistribution, getHourlyDistribution } from '../utils/stats'
 import { getServiceIcon } from '../utils/services'
 import { getServiceLogo } from '../utils/logos'
 
+const COLORS = ['#C4612F', '#A94E22', '#8B3E1C', '#6D2E16', '#4F1E10']
+
 export default function StatsModal({ tokens, onClose }) {
   const summary = getStatsSummary(tokens)
-  const mostUsed = getMostUsedTokens(tokens, 5)
+  const mostUsed = getMostUsedTokens(tokens, 10)
   const recentlyUsed = getRecentlyUsedTokens(tokens, 5)
+  const usageTrend = getUsageTrend(tokens)
+  const categoryDist = getCategoryDistribution(tokens)
+  const hourlyDist = getHourlyDistribution(tokens)
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -54,6 +60,87 @@ export default function StatsModal({ tokens, onClose }) {
             <div className="text-xs text-muted">使用天数</div>
           </div>
         </div>
+
+        {/* Charts */}
+        {mostUsed.length > 0 && (
+          <>
+            {/* Usage Trend Chart */}
+            {usageTrend.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-lg font-light text-ink dark:text-surface mb-3">📈 使用趋势（最近7天）</h3>
+                <div className="bg-surface dark:bg-ink rounded-xl p-4 border border-border">
+                  <ResponsiveContainer width="100%" height={200}>
+                    <LineChart data={usageTrend}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#E7E1D7" />
+                      <XAxis dataKey="date" stroke="#5C635D" style={{ fontSize: '12px' }} />
+                      <YAxis stroke="#5C635D" style={{ fontSize: '12px' }} />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#FBF9F5',
+                          border: '1px solid #E7E1D7',
+                          borderRadius: '8px'
+                        }}
+                      />
+                      <Line type="monotone" dataKey="count" stroke="#C4612F" strokeWidth={2} dot={{ fill: '#C4612F' }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {/* Category Distribution */}
+            {categoryDist.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-lg font-light text-ink dark:text-surface mb-3">📊 分类分布</h3>
+                <div className="bg-surface dark:bg-ink rounded-xl p-4 border border-border">
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie
+                        data={categoryDist}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                        outerRadius={80}
+                        fill="#8884d8"
+                        dataKey="value"
+                      >
+                        {categoryDist.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {/* Hourly Distribution */}
+            {hourlyDist.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-lg font-light text-ink dark:text-surface mb-3">🕐 使用时段分布</h3>
+                <div className="bg-surface dark:bg-ink rounded-xl p-4 border border-border">
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={hourlyDist}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#E7E1D7" />
+                      <XAxis dataKey="hour" stroke="#5C635D" style={{ fontSize: '12px' }} />
+                      <YAxis stroke="#5C635D" style={{ fontSize: '12px' }} />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#FBF9F5',
+                          border: '1px solid #E7E1D7',
+                          borderRadius: '8px'
+                        }}
+                      />
+                      <Bar dataKey="count" fill="#C4612F" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+          </>
+        )}
 
         {/* Most Used */}
         {mostUsed.length > 0 && (
