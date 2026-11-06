@@ -22,6 +22,7 @@
 - 删除未被使用的实验性 WebAuthn 代码（`src/utils/webauthn.js`，从未验证签名）。
 - 移除 `decryptData` 中无认证的 v1 CryptoJS 口令回落；只接受 `tv3:` 和 `tv2:` 信封。
 - Logo 只返回白名单 `SERVICE_LOGOS` 里的 URL，不再根据用户输入的 issuer 拼接域名。
+- 修复 `npm audit --audit-level=high` 全部高危项：升级 `body-parser` 1.20.9、`brace-expansion` 5.0.12、`compression` 1.8.2、`proxy-addr` 2.0.8、`browserslist` 4.29.5、`nanoid` 3.3.20、`source-map-js` 1.2.2、`vite` 8.3.6（含 `launch-editor`）；剩余审计项均为 moderate。
 
 ### 部署
 
