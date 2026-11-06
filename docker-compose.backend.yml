@@ -15,10 +15,15 @@ services:
       # SQLite (default)
       SQLITE_FILENAME: /app/data/totp.db
 
-      # JWT
-      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
-      JWT_EXPIRES_IN: 7d
-      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:-dev-encryption-key-change-in-production}
+      # JWT (required — no default; set JWT_SECRET in the environment.
+      # v1.5.0 removed DATA_ENCRYPTION_KEY: sync is end-to-end encrypted
+      # on the client.)
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-12h}
+
+      # Registration (dev default: closed unless an invite code is set)
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-false}
+      REGISTRATION_INVITE_CODE: ${REGISTRATION_INVITE_CODE:-}
 
       # CORS
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost}

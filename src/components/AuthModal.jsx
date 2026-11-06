@@ -7,6 +7,7 @@ export default function AuthModal({ onClose, onAuthSuccess }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
+  const [inviteCode, setInviteCode] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -21,7 +22,7 @@ export default function AuthModal({ onClose, onAuthSuccess }) {
         const result = await api.login(email, password)
         onAuthSuccess?.(result.user)
       } else {
-        const result = await api.register(email, password, name)
+        const result = await api.register(email, password, name, inviteCode || undefined)
         onAuthSuccess?.(result.user)
       }
       onClose()
@@ -127,6 +128,25 @@ export default function AuthModal({ onClose, onAuthSuccess }) {
               </p>
             )}
           </div>
+
+          {/* Invite Code (Register only; registration is closed by default) */}
+          {mode === 'register' && (
+            <div>
+              <label className="block text-sm font-medium text-[#5C635D] dark:text-[#B5B8B6] mb-2">
+                邀请码
+              </label>
+              <input
+                type="text"
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value)}
+                className="w-full px-4 py-3 bg-white dark:bg-[#1F2421] border border-[#E7E1D7] dark:border-[#3A3835] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4612F] text-[#1F2421] dark:text-[#F7F4EF]"
+                placeholder="管理员提供的邀请码"
+              />
+              <p className="text-xs text-[#5C635D] dark:text-[#B5B8B6] mt-1">
+                注册默认关闭，请向管理员索取邀请码。
+              </p>
+            </div>
+          )}
 
           {/* Submit Button */}
           <button

@@ -361,6 +361,9 @@ function App() {
   }, [])
 
   // 初始化后端同步
+  // v1.5.0: 同步是端到端加密的，只有主密码已设置并解锁（内存中有
+  // syncPassword）时才能加载云端数据。锁定启动时不加载，等解锁后
+  // handleUnlock 再加载；无主密码时提示用户先设置主密码。
   const initBackendSync = async (lockedOnStart = false) => {
     if (api.isAuthenticated()) {
       try {
@@ -368,18 +371,27 @@ function App() {
         setCurrentUser(userData.user)
 
         const syncEnabled = syncManager.initSync()
-        if (syncEnabled && !lockedOnStart) {
-          // 从后端加载令牌
-          const backendTokens = await syncManager.loadFromBackend()
-          if (backendTokens) {
-            const saved = localStorage.getItem('totp-tokens')
-            const localTokens = saved ? JSON.parse(saved) : []
-            setTokens(mergeTokens(localTokens, backendTokens))
-            toast.success('✓ 已从云端加载数据', 2000)
-          }
-          if (backendTokens) setSyncReady(true)
-        }
         setBackendSyncEnabled(syncEnabled)
+        if (syncEnabled && !lockedOnStart) {
+          if (!syncManager.hasSyncPassword()) {
+            toast.error('同步需要主密码：请先设置并解锁主密码，云端数据用主密码端到端加密', 5000)
+            return
+          }
+          try {
+            // 从后端加载令牌
+            const backendTokens = await syncManager.loadFromBackend()
+            if (backendTokens) {
+              const saved = localStorage.getItem('totp-tokens')
+              const localTokens = saved ? JSON.parse(saved) : []
+              setTokens(mergeTokens(localTokens, backendTokens))
+              toast.success('✓ 已从云端加载数据', 2000)
+            }
+            if (backendTokens) setSyncReady(true)
+          } catch (error) {
+            console.error('Failed to load from backend:', error)
+            toast.error(`云端加载失败：${error.message || '请稍后重试'}，本地数据未受影响`, 5000)
+          }
+        }
       } catch (error) {
         console.error('Failed to init backend sync:', error)
       }
@@ -389,21 +401,38 @@ function App() {
   // 处理登录成功
   const handleAuthSuccess = async (user) => {
     setCurrentUser(user)
-    syncManager.enableSync()
+    // v1.5.0: 无主密码时拒绝启用同步（不静默同步明文），提示用户先
+    // 在设置里创建主密码，创建后 handleSetupMasterPassword 会启用同步。
+    try {
+      syncManager.enableSync()
+    } catch (error) {
+      toast.error(`${error.message}：请先在设置中创建主密码`, 5000)
+      setBackendSyncEnabled(false)
+      setSyncReady(false)
+      toast.success(`✓ 欢迎，${user.name}！`, 2000)
+      return
+    }
 
     // 从后端加载令牌
-    const backendTokens = await syncManager.loadFromBackend()
-    if (backendTokens) {
-      // 合并本地和云端数据
-      const localTokens = tokens
-      const merged = mergeTokens(localTokens, backendTokens)
-      setTokens(merged)
-      toast.success(`✓ 欢迎回来，${user.name}！已加载 ${backendTokens.length} 个账号`, 3000)
-    } else {
-      toast.success(`✓ 欢迎，${user.name}！`, 2000)
+    try {
+      const backendTokens = await syncManager.loadFromBackend()
+      if (backendTokens) {
+        // 合并本地和云端数据
+        const localTokens = tokens
+        const merged = mergeTokens(localTokens, backendTokens)
+        setTokens(merged)
+        toast.success(`✓ 欢迎回来，${user.name}！已加载 ${backendTokens.length} 个账号`, 3000)
+      } else {
+        toast.success(`✓ 欢迎，${user.name}！`, 2000)
+      }
+      setBackendSyncEnabled(true)
+      setSyncReady(Boolean(backendTokens))
+    } catch (error) {
+      console.error('Failed to load from backend:', error)
+      toast.error(`云端加载失败：${error.message || '请稍后重试'}，本地数据未受影响`, 5000)
+      setBackendSyncEnabled(true)
+      setSyncReady(false)
     }
-    setBackendSyncEnabled(true)
-    setSyncReady(Boolean(backendTokens))
   }
 
   // 处理登出
@@ -459,12 +488,21 @@ function App() {
       if (decrypted) {
         setTokens(decrypted)
         setCurrentPassword(password)
+        // v1.5.0: 主密码只放内存，作为同步的端到端加密密钥。
+        syncManager.setSyncPassword(password)
         setIsLocked(false)
-        if (syncManager.isSyncEnabled()) {
-          const backendTokens = await syncManager.loadFromBackend()
-          if (backendTokens) setTokens(mergeTokens(decrypted, backendTokens))
-          setBackendSyncEnabled(true)
-          setSyncReady(Boolean(backendTokens))
+        if (syncManager.initSync()) {
+          try {
+            const backendTokens = await syncManager.loadFromBackend()
+            if (backendTokens) setTokens(mergeTokens(decrypted, backendTokens))
+            setBackendSyncEnabled(true)
+            setSyncReady(Boolean(backendTokens))
+          } catch (error) {
+            console.error('Failed to load from backend:', error)
+            toast.error(`云端加载失败：${error.message || '请稍后重试'}，本地数据未受影响`, 5000)
+            setBackendSyncEnabled(true)
+            setSyncReady(false)
+          }
         }
       }
     } catch (e) {
@@ -492,12 +530,15 @@ function App() {
       localStorage.setItem('totp-tokens', JSON.stringify(tokens))
     }
 
-    // 同步到后端
+    // 同步到后端（v1.5.0：失败会返回 { ok:false, error }，必须提示用户，
+    // 不能静默丢弃）
     if (backendSyncEnabled && syncReady) {
-      const timer = window.setTimeout(() => {
-        syncManager.syncToBackend(tokens).catch(err => {
-          console.error('Background sync failed:', err)
-        })
+      const timer = window.setTimeout(async () => {
+        const result = await syncManager.syncToBackend(tokens)
+        if (result && !result.ok) {
+          console.error('Background sync failed:', result.error)
+          showToastError(`同步失败：${result.error}，本地数据已保留`)
+        }
       }, 500)
       return () => window.clearTimeout(timer)
     }
@@ -512,10 +553,12 @@ function App() {
   }, [])
 
   const addToken = (tokenData) => {
+    const now = Date.now()
     const newToken = {
-      id: Date.now().toString(),
+      id: now.toString(),
       ...tokenData,
-      createdAt: Date.now()
+      createdAt: now,
+      updatedAt: now
     }
     setTokens([...tokens, newToken])
     setIsAddModalOpen(false)
@@ -531,11 +574,15 @@ function App() {
     }
 
     // 添加 ID 和时间戳
-    const newTokens = importedTokens.map(token => ({
-      ...token,
-      id: token.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      createdAt: token.createdAt || Date.now()
-    }))
+    const newTokens = importedTokens.map(token => {
+      const createdAt = token.createdAt || Date.now()
+      return {
+        ...token,
+        id: token.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        createdAt,
+        updatedAt: token.updatedAt || createdAt
+      }
+    })
 
     setTokens([...tokens, ...newTokens])
     setIsImportModalOpen(false)
@@ -629,6 +676,25 @@ function App() {
     // Encrypt all current tokens
     await encryptTokens(tokens, password)
     setCurrentPassword(password)
+    // v1.5.0: 主密码同时是同步的端到端加密密钥（仅放内存）。如果已
+    // 登录同步账号，现在就可以启用同步并把本地数据加密上传。
+    syncManager.setSyncPassword(password)
+    if (api.isAuthenticated()) {
+      try {
+        syncManager.enableSync()
+        setBackendSyncEnabled(true)
+        const backendTokens = await syncManager.loadFromBackend()
+        if (backendTokens) {
+          setTokens(mergeTokens(tokens, backendTokens))
+          setSyncReady(true)
+        } else {
+          setSyncReady(true)
+        }
+      } catch (error) {
+        console.error('Failed to enable sync:', error)
+        toast.error(`同步启用失败：${error.message || '请稍后重试'}`, 5000)
+      }
+    }
     alert('主密码设置成功！您的数据已加密保护。')
   }
 
@@ -649,6 +715,10 @@ function App() {
       localStorage.setItem('totp-tokens', JSON.stringify(decrypted))
       removeMasterPassword()
       setCurrentPassword(null)
+      // v1.5.0: 没有主密码就不能同步（同步需要主密码做端到端加密）。
+      syncManager.disableSync()
+      setBackendSyncEnabled(false)
+      setSyncReady(false)
       setTokens(decrypted)
 
       toast.success('✓ 主密码已移除，数据已解密', 2000)
@@ -664,6 +734,8 @@ function App() {
       setIsLocked(true)
       setTokens([])
       setCurrentPassword(null)
+      // v1.5.0: 锁定即丢弃内存中的同步密钥，下次解锁时重新输入主密码。
+      syncManager.clearSyncPassword()
       setMasterPasswordModal({
         mode: 'verify',
         onSuccess: handleUnlock

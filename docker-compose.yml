@@ -17,4 +17,4 @@ services:
       retries: 3
     labels:
       - "com.token-vault.description=Token Vault - TOTP 验证码管理"
-      - "com.token-vault.version=1.4.1"
+      - "com.token-vault.version=1.5.0"

@@ -16,11 +16,12 @@ Token Vault 是一个本地优先的 TOTP 验证码管理工具，支持 PWA 安
 
 默认数据保存在浏览器本地。未设置主密码时，TOTP 密钥以明文 JSON 存储；设置主密码后，本地保险库会加密，忘记密码无法恢复。
 
-自托管同步服务会使用 AES-256-GCM 加密数据库中的 TOTP 密钥，但目前不是端到端加密，服务端处理请求时能够解密数据。生产同步服务必须部署在 HTTPS 后面并保护好 `DATA_ENCRYPTION_KEY`。完整说明见 [SECURITY.md](SECURITY.md) 和应用内隐私政策。
+自托管同步是端到端加密的：每个 TOTP 密钥在客户端用用户自己的主密码加密（PBKDF2-SHA256 600,000 次 + AES-256-GCM，`tv3:` 信封），服务端只存储不透明信封，无法解密。**同步必须先设置主密码**，忘记主密码后云端和本地加密数据都无法恢复。完整说明见 [SECURITY.md](SECURITY.md) 和应用内隐私政策。
 
 ## 本地开发
 
-要求 Node.js 20.19+。
+要求 Node.js 20.19+。本地开发也需要设置 `JWT_SECRET`（至少 32 字符，见 `backend/.env.example`）；后端不再有任何默认密钥。
+
 
 ```bash
 npm install
@@ -59,11 +60,11 @@ npm run test:coverage
 
 ```bash
 cp .env.production.example .env.production
-# 填写唯一的 JWT_SECRET、64 位十六进制 DATA_ENCRYPTION_KEY 和 HTTPS CORS_ORIGIN
+# 填写 DOMAIN、唯一的 JWT_SECRET、邀请码和 HTTPS CORS_ORIGIN
 ./deploy.sh
 ```
 
-生产栈仅对外提供前端端口，API 通过同源 `/api` 访问，SQLite 数据保存在 `backend/data/totp.db`。完整步骤、TLS 要求和备份恢复说明见 [DEPLOYMENT.md](DEPLOYMENT.md)。
+生产栈只有 Caddy 对外提供 80/443（自动 HTTPS），前端和后端只在内部网络可达，API 通过同源 `/api` 访问，SQLite 数据保存在 `backend/data/totp.db`。完整步骤、TLS 要求和备份恢复说明见 [DEPLOYMENT.md](DEPLOYMENT.md)。
 
 ## 隐私
 

@@ -58,13 +58,17 @@ export function normalizeTokenInput(input, { partial = false } = {}) {
   assignString('account', 'Account', 255)
 
   if (!partial || input.secret !== undefined) {
-    const secret = requiredString(input.secret, 'Secret', 512)
-      .replace(/[\s-]/g, '')
-      .toUpperCase()
-    if (!/^[A-Z2-7]+=*$/.test(secret)) {
-      throw new ValidationError('Secret must be a valid Base32 value')
+    // v1.5.0 — end-to-end encrypted sync: the sync API accepts ONLY an
+    // opaque tv3: envelope produced by the client (PBKDF2 + AES-256-GCM,
+    // see src/utils/syncCrypto.js). Plaintext Base32 secrets are rejected
+    // here so the server can never receive a usable TOTP secret.
+    // A single encrypted secret is a few hundred characters; 2048 leaves
+    // ample headroom without allowing unbounded payloads.
+    const secret = requiredString(input.secret, 'Secret', 2048)
+    if (!secret.startsWith('tv3:')) {
+      throw new ValidationError('Secret must be a tv3: encrypted envelope')
     }
-    result.secret = secret.replace(/=+$/, '')
+    result.secret = secret
   }
 
   if (!partial || input.algorithm !== undefined) {

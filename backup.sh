@@ -40,7 +40,7 @@ if command -v sha256sum >/dev/null 2>&1; then
 fi
 
 echo "Backup created: $BACKUP_FILE"
-echo "Keep DATA_ENCRYPTION_KEY in a separate secret store. The database cannot be restored without the same key."
+echo "Note (v1.5.0): secrets are end-to-end encrypted with each user's master password. A database backup alone is useless without every user's master password — there is no server key to restore with."
 
 # Keep successful database backups for 30 days. Checksum sidecars are removed with them.
 find "$BACKUP_DIR" -type f \( -name 'token-vault-*.db.gz' -o -name 'token-vault-*.db.gz.sha256' \) -mtime +30 -delete

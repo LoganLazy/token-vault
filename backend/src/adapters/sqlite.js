@@ -2,21 +2,14 @@ import initSqlJs from 'sql.js'
 import { StorageAdapter } from './base.js'
 import fs from 'fs'
 import path from 'path'
-import {
-  createCipheriv,
-  createDecipheriv,
-  createHash,
-  randomBytes
-} from 'node:crypto'
-
-const ENCRYPTED_SECRET_PREFIX = 'enc:v1'
+// v1.5.0: the server stores opaque tv3: envelopes as-is (end-to-end
+// encryption on the client). No server-side secret cipher any more.
 
 export class SQLiteAdapter extends StorageAdapter {
   constructor(config) {
     super(config)
     this.db = null
     this.SQL = null
-    this.encryptionKey = this._normalizeEncryptionKey(config.encryptionKey)
   }
 
   async connect() {
@@ -45,7 +38,6 @@ export class SQLiteAdapter extends StorageAdapter {
 
       // Initialize schema
       await this.initSchema()
-      this._migratePlaintextSecrets()
 
       console.log('✅ SQLite connected:', this.config.filename)
     } catch (error) {
@@ -99,10 +91,18 @@ export class SQLiteAdapter extends StorageAdapter {
         email TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
         name TEXT,
+        token_version INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       )
     `)
+
+    // Safe migration for pre-1.5.0 databases (fresh DB is required for
+    // secrets, but existing user rows keep working).
+    const userColumns = this._getAll('PRAGMA table_info(users)').map(c => c.name)
+    if (!userColumns.includes('token_version')) {
+      this.db.run('ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0')
+    }
 
     // Tokens table
     this.db.run(`
@@ -191,96 +191,6 @@ export class SQLiteAdapter extends StorageAdapter {
     }
   }
 
-  _normalizeEncryptionKey(key) {
-    const value = key || 'dev-encryption-key-change-in-production'
-    if (/^[a-fA-F0-9]{64}$/.test(value)) {
-      return Buffer.from(value, 'hex')
-    }
-    return createHash('sha256').update(value, 'utf8').digest()
-  }
-
-  _encryptSecret(secret) {
-    if (typeof secret !== 'string' || !secret) {
-      throw new Error('Token secret must be a non-empty string')
-    }
-    if (secret.startsWith(`${ENCRYPTED_SECRET_PREFIX}:`)) {
-      return secret
-    }
-
-    const iv = randomBytes(12)
-    const cipher = createCipheriv('aes-256-gcm', this.encryptionKey, iv)
-    const encrypted = Buffer.concat([
-      cipher.update(secret, 'utf8'),
-      cipher.final()
-    ])
-    const authTag = cipher.getAuthTag()
-
-    return [
-      ENCRYPTED_SECRET_PREFIX,
-      iv.toString('base64url'),
-      authTag.toString('base64url'),
-      encrypted.toString('base64url')
-    ].join(':')
-  }
-
-  _decryptSecret(secret) {
-    if (typeof secret !== 'string' || !secret.startsWith(`${ENCRYPTED_SECRET_PREFIX}:`)) {
-      return secret
-    }
-
-    const parts = secret.split(':')
-    if (parts.length !== 5 || `${parts[0]}:${parts[1]}` !== ENCRYPTED_SECRET_PREFIX) {
-      throw new Error('Stored token secret has an invalid encrypted format')
-    }
-
-    try {
-      const iv = Buffer.from(parts[2], 'base64url')
-      const authTag = Buffer.from(parts[3], 'base64url')
-      const encrypted = Buffer.from(parts[4], 'base64url')
-      const decipher = createDecipheriv('aes-256-gcm', this.encryptionKey, iv)
-      decipher.setAuthTag(authTag)
-      return Buffer.concat([
-        decipher.update(encrypted),
-        decipher.final()
-      ]).toString('utf8')
-    } catch (error) {
-      throw new Error('Unable to decrypt token secret; verify DATA_ENCRYPTION_KEY', {
-        cause: error
-      })
-    }
-  }
-
-  _decryptToken(token) {
-    if (!token) return token
-    return { ...token, secret: this._decryptSecret(token.secret) }
-  }
-
-  _migratePlaintextSecrets() {
-    const tokens = this._getAll('SELECT id, secret FROM tokens')
-
-    // Fail at startup if an existing encrypted database is opened with the
-    // wrong key instead of returning corrupt or unusable token data later.
-    tokens
-      .filter(token => token.secret.startsWith(`${ENCRYPTED_SECRET_PREFIX}:`))
-      .forEach(token => this._decryptSecret(token.secret))
-
-    const plaintextTokens = tokens.filter(
-      token => !token.secret.startsWith(`${ENCRYPTED_SECRET_PREFIX}:`)
-    )
-    if (plaintextTokens.length === 0) return
-
-    this._runTransaction(() => {
-      for (const token of plaintextTokens) {
-        this.db.run(
-          'UPDATE tokens SET secret = ?, updated_at = ? WHERE id = ?',
-          [this._encryptSecret(token.secret), Date.now(), token.id]
-        )
-      }
-    })
-
-    console.log(`✅ Encrypted ${plaintextTokens.length} existing token secret(s)`)
-  }
-
   // User Management
   async createUser(userData) {
     const now = Date.now()
@@ -312,6 +222,10 @@ export class SQLiteAdapter extends StorageAdapter {
       fields.push('password_hash = ?')
       values.push(userData.passwordHash)
     }
+    if (userData.tokenVersion !== undefined) {
+      fields.push('token_version = ?')
+      values.push(userData.tokenVersion)
+    }
 
     fields.push('updated_at = ?')
     values.push(Date.now())
@@ -336,7 +250,7 @@ export class SQLiteAdapter extends StorageAdapter {
         userId,
         tokenData.issuer,
         tokenData.account,
-        this._encryptSecret(tokenData.secret),
+        tokenData.secret,
         tokenData.algorithm || 'SHA1',
         tokenData.digits || 6,
         tokenData.period || 30,
@@ -352,14 +266,14 @@ export class SQLiteAdapter extends StorageAdapter {
     return this._getAll(
       'SELECT * FROM tokens WHERE user_id = ? ORDER BY created_at DESC',
       [userId]
-    ).map(token => this._decryptToken(token))
+    )
   }
 
   async getTokenById(userId, tokenId) {
-    return this._decryptToken(this._getOne(
+    return this._getOne(
       'SELECT * FROM tokens WHERE id = ? AND user_id = ?',
       [tokenId, userId]
-    ))
+    )
   }
 
   async updateToken(userId, tokenId, tokenData) {
@@ -376,7 +290,7 @@ export class SQLiteAdapter extends StorageAdapter {
     }
     if (tokenData.secret !== undefined) {
       fields.push('secret = ?')
-      values.push(this._encryptSecret(tokenData.secret))
+      values.push(tokenData.secret)
     }
     if (tokenData.category !== undefined) {
       fields.push('category = ?')
@@ -421,14 +335,14 @@ export class SQLiteAdapter extends StorageAdapter {
        WHERE user_id = ? AND (issuer LIKE ? OR account LIKE ?)
        ORDER BY created_at DESC`,
       [userId, searchPattern, searchPattern]
-    ).map(token => this._decryptToken(token))
+    )
   }
 
   async getTokensByCategory(userId, category) {
     return this._getAll(
       'SELECT * FROM tokens WHERE user_id = ? AND category = ? ORDER BY created_at DESC',
       [userId, category]
-    ).map(token => this._decryptToken(token))
+    )
   }
 
   // Statistics
@@ -491,7 +405,7 @@ export class SQLiteAdapter extends StorageAdapter {
           userId,
           token.issuer,
           token.account,
-          this._encryptSecret(token.secret),
+          token.secret,
           token.algorithm || 'SHA1',
           token.digits || 6,
           token.period || 30,

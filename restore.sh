@@ -22,7 +22,7 @@ export PUID="${PUID:-$(id -u)}"
 export PGID="${PGID:-$(id -g)}"
 
 echo "This will replace the current server database."
-echo "The configured DATA_ENCRYPTION_KEY must match the key used by this backup."
+echo "Note (v1.5.0): secrets in this backup are end-to-end encrypted with each user's master password. Restoring the database does not restore a forgotten master password."
 read -r -p "Type RESTORE to continue: " confirmation
 [ "$confirmation" = "RESTORE" ] || { echo "Restore cancelled."; exit 1; }
 
@@ -63,15 +63,14 @@ chmod 600 "$DATA_FILE" 2>/dev/null || true
 echo "Starting backend and validating the restored database..."
 compose start backend >/dev/null
 backend_stopped=false
-health_url="http://127.0.0.1:${HTTP_PORT:-80}/health"
 for attempt in $(seq 1 30); do
-  if curl --fail --silent "$health_url" >/dev/null 2>&1; then
+  if compose exec -T backend wget --quiet --tries=1 --spider http://localhost:3000/health >/dev/null 2>&1; then
     echo "Restore completed successfully."
     exit 0
   fi
   if [ "$attempt" -eq 30 ]; then
     compose logs --tail=100 backend
-    echo "Restore finished, but the service is unhealthy. Verify DATA_ENCRYPTION_KEY and file permissions." >&2
+    echo "Restore finished, but the service is unhealthy. Check the backend logs and file permissions." >&2
     exit 1
   fi
   sleep 2

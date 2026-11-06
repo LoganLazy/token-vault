@@ -4,7 +4,10 @@ import { getDatabase } from '../adapters/index.js'
 
 /**
  * Authentication Middleware
- * Validates JWT token and attaches user to request
+ * Validates JWT token and attaches user to request.
+ * v1.5.0: the JWT carries `v` = users.token_version. Password change
+ * and logout increment token_version, which revokes all previously
+ * issued tokens for that user.
  */
 export async function authenticate(req, res, next) {
   try {
@@ -25,6 +28,17 @@ export async function authenticate(req, res, next) {
 
     if (!user) {
       return res.status(401).json({ error: 'User not found' })
+    }
+
+    // Revoked if the token's version no longer matches the user's
+    // current version (password changed / logged out since it was issued).
+    // Tokens issued before v1.5.0 carry no `v`; treat them as version 0,
+    // which matches a fresh 1.5.0 user row and is revoked by the first
+    // password change / logout after the upgrade.
+    const tokenVersion = typeof decoded.v === 'number' ? decoded.v : 0
+    const currentVersion = typeof user.token_version === 'number' ? user.token_version : 0
+    if (tokenVersion !== currentVersion) {
+      return res.status(401).json({ error: 'Token revoked' })
     }
 
     // Attach user to request (exclude password hash)
@@ -60,7 +74,9 @@ export async function optionalAuth(req, res, next) {
       const db = await getDatabase()
       const user = await db.getUserById(decoded.userId)
 
-      if (user) {
+      const tokenVersion = typeof decoded.v === 'number' ? decoded.v : 0
+      const currentVersion = user && typeof user.token_version === 'number' ? user.token_version : 0
+      if (user && tokenVersion === currentVersion) {
         req.user = {
           id: user.id,
           email: user.email,

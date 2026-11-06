@@ -17,26 +17,17 @@ export class DatabaseFactory {
 
     switch (dbType) {
       case 'sqlite':
-        return new SQLiteAdapter({
-          ...config.database.sqlite,
-          encryptionKey: config.dataEncryptionKey
-        })
+        return new SQLiteAdapter(config.database.sqlite)
 
       case 'memory':
         return new MemoryAdapter(config.database)
 
       case 'mysql':
-        return new MySQLAdapter({
-          ...config.database.mysql,
-          encryptionKey: config.dataEncryptionKey
-        })
+        return new MySQLAdapter(config.database.mysql)
 
       case 'postgresql':
       case 'postgres':
-        return new PostgreSQLAdapter({
-          ...config.database.postgres,
-          encryptionKey: config.dataEncryptionKey
-        })
+        return new PostgreSQLAdapter(config.database.postgres)
 
       default:
         // Default to memory if type is invalid

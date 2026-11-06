@@ -1,3 +1,5 @@
+# Production stack (v1.5.0): Caddy (public, automatic HTTPS) -> frontend
+# (nginx, internal) -> backend (internal). Only Caddy publishes ports.
 services:
   backend:
     build:
@@ -12,10 +14,11 @@ services:
       DB_TYPE: sqlite
       SQLITE_FILENAME: /app/data/totp.db
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
-      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?DATA_ENCRYPTION_KEY is required}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-24h}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-12h}
       BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-12}
       CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required}
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-false}
+      REGISTRATION_INVITE_CODE: ${REGISTRATION_INVITE_CODE:-}
     expose:
       - "3000"
     volumes:
@@ -37,8 +40,8 @@ services:
         VITE_API_URL: ${VITE_API_URL:-/api}
     container_name: token-vault-frontend
     restart: unless-stopped
-    ports:
-      - "${HTTP_PORT:-80}:80"
+    expose:
+      - "80"
     depends_on:
       - backend
     healthcheck:
@@ -48,6 +51,34 @@ services:
       retries: 3
     networks:
       - token-vault-network
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: token-vault-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN is required}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - token-vault-network
+
+volumes:
+  caddy_data:
+  caddy_config:
 
 networks:
   token-vault-network:
