@@ -1,0 +1,17 @@
+# Token Vault — Caddy reverse proxy (v1.5.0).
+#
+# Caddy is the ONLY service exposed to the internet (ports 80/443).
+# It terminates TLS automatically for ${DOMAIN} (Let's Encrypt, HTTP-01
+# challenge on port 80) and redirects HTTP to HTTPS. The frontend
+# (nginx) and backend are internal-only on the compose network.
+# ${DOMAIN} comes from .env.production. Do NOT point DOMAIN at a domain
+# you do not control, and do not expose the frontend/backend ports.
+{$DOMAIN} {
+  encode gzip
+
+  header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  header X-Content-Type-Options "nosniff"
+  header Referrer-Policy "no-referrer"
+
+  reverse_proxy frontend:80
+}

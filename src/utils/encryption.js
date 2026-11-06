@@ -238,10 +238,11 @@ export async function decryptData(encrypted, password) {
     }
     if (encrypted.startsWith(LEGACY_ENCRYPTION_PREFIX)) return decryptV2(encrypted, password)
 
-    const bytes = CryptoJS.AES.decrypt(encrypted, password)
-    const json = bytes.toString(CryptoJS.enc.Utf8)
-    if (!json) throw new Error('Empty decrypted data')
-    return JSON.parse(json)
+    // v1.5.0: the old unauthenticated CryptoJS passphrase fallback
+    // (CryptoJS.AES.decrypt with a password, EVP_BytesToKey/MD5, no
+    // authentication) was removed. Only tv3: and tv2: envelopes are
+    // accepted now.
+    throw new Error('Unsupported encryption format')
   } catch {
     throw new Error('解密失败，请检查密码是否正确')
   }

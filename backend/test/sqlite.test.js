@@ -16,14 +16,13 @@ test('production configuration rejects weak secrets', () => {
       env: {
         ...process.env,
         NODE_ENV: 'production',
-        JWT_SECRET: 'short',
-        DATA_ENCRYPTION_KEY: 'a'.repeat(64)
+        JWT_SECRET: 'short'
       }
     }
   )
 
   assert.notEqual(result.status, 0)
-  assert.match(result.stderr, /JWT_SECRET must be a unique value/)
+  assert.match(result.stderr, /JWT_SECRET must be set to a unique value of at least 32 characters/)
 })
 
 test('SQLite adapter persists users and tokens across reconnects', async (t) => {
@@ -42,14 +41,14 @@ test('SQLite adapter persists users and tokens across reconnects', async (t) => 
   const tokenId = await firstConnection.addToken(userId, {
     issuer: 'Example',
     account: 'test@example.com',
-    secret: 'JBSWY3DPEHPK3PXP'
+    secret: 'tv3:opaque-envelope'
   })
   const storedToken = firstConnection._getOne(
     'SELECT secret FROM tokens WHERE id = ?',
     [tokenId]
   )
-  assert.notEqual(storedToken.secret, 'JBSWY3DPEHPK3PXP')
-  assert.match(storedToken.secret, /^enc:v1:/)
+  // v1.5.0: the server stores the client-encrypted envelope as-is.
+  assert.equal(storedToken.secret, 'tv3:opaque-envelope')
 
   await firstConnection.disconnect()
 
@@ -59,12 +58,12 @@ test('SQLite adapter persists users and tokens across reconnects', async (t) => 
 
   assert.equal(token.issuer, 'Example')
   assert.equal(token.account, 'test@example.com')
-  assert.equal(token.secret, 'JBSWY3DPEHPK3PXP')
+  assert.equal(token.secret, 'tv3:opaque-envelope')
 
-  await secondConnection.updateToken(userId, tokenId, { secret: 'NEWSECRET' })
+  await secondConnection.updateToken(userId, tokenId, { secret: 'tv3:new-envelope' })
   assert.equal(
     (await secondConnection.getTokenById(userId, tokenId)).secret,
-    'NEWSECRET'
+    'tv3:new-envelope'
   )
 
   await secondConnection.deleteUser(userId)
@@ -96,62 +95,48 @@ test('SQLite bulk inserts are committed together', async (t) => {
   await database.disconnect()
 })
 
-test('SQLite migrates plaintext secrets and rejects the wrong key', async (t) => {
+test('SQLite adds token_version to legacy user rows', async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'token-vault-migration-'))
   const filename = path.join(directory, 'vault.db')
-  const encryptionKey = 'a'.repeat(64)
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
 
-  const legacyDatabase = new SQLiteAdapter({ filename, encryptionKey })
-  await legacyDatabase.connect()
-  const userId = await legacyDatabase.createUser({
-    email: 'legacy@example.com',
-    passwordHash: 'hash'
-  })
-  const now = Date.now()
-  legacyDatabase._run(
-    `INSERT INTO tokens (
-      user_id, issuer, account, secret, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?)`,
-    [userId, 'Legacy', 'legacy@example.com', 'PLAINTEXT', now, now]
-  )
-  await legacyDatabase.disconnect()
-
-  const migratedDatabase = new SQLiteAdapter({ filename, encryptionKey })
-  await migratedDatabase.connect()
-  assert.equal((await migratedDatabase.getAllTokens(userId))[0].secret, 'PLAINTEXT')
-  assert.match(
-    migratedDatabase._getOne('SELECT secret FROM tokens').secret,
-    /^enc:v1:/
-  )
-  await migratedDatabase.disconnect()
-  assert.equal(
-    fs.readFileSync(filename).includes(Buffer.from('PLAINTEXT')),
-    false
-  )
-
-  const wrongKeyDatabase = new SQLiteAdapter({
-    filename,
-    encryptionKey: 'b'.repeat(64)
-  })
-  const originalConsoleError = console.error
-  console.error = () => {}
-  try {
-    await assert.rejects(
-      wrongKeyDatabase.connect(),
-      /verify DATA_ENCRYPTION_KEY/
+  // Simulate a pre-1.5.0 database: users table without token_version.
+  const initSqlJs = (await import('sql.js')).default
+  const SQL = await initSqlJs()
+  const legacy = new SQL.Database()
+  legacy.run(`
+    CREATE TABLE users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      name TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
     )
-  } finally {
-    console.error = originalConsoleError
-  }
+  `)
+  legacy.run(
+    'INSERT INTO users (email, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?)',
+    ['legacy@example.com', 'hash', Date.now(), Date.now()]
+  )
+  fs.writeFileSync(filename, Buffer.from(legacy.export()))
+  legacy.close()
+
+  const database = new SQLiteAdapter({ filename })
+  await database.connect()
+  const user = await database.getUserByEmail('legacy@example.com')
+  assert.equal(user.token_version, 0)
+
+  await database.updateUser(user.id, { tokenVersion: 3 })
+  assert.equal((await database.getUserById(user.id)).token_version, 3)
+  await database.disconnect()
 })
 
 test('API uses SQLite and routes static token endpoints correctly', async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'token-vault-api-'))
   process.env.DB_TYPE = 'sqlite'
   process.env.SQLITE_FILENAME = path.join(directory, 'vault.db')
-  process.env.JWT_SECRET = 'test-secret'
-  process.env.DATA_ENCRYPTION_KEY = 'c'.repeat(64)
+  process.env.JWT_SECRET = 'test-secret-that-is-long-enough-0123456789'
+  process.env.REGISTRATION_ENABLED = 'true'
 
   const [{ app }, { closeDatabase }] = await Promise.all([
     import('../src/index.js'),
@@ -193,7 +178,7 @@ test('API uses SQLite and routes static token endpoints correctly', async (t) =>
     body: JSON.stringify({
       issuer: 'Example',
       account: 'api@example.com',
-      secret: 'JBSWY3DPEHPK3PXP'
+      secret: 'tv3:test-envelope'
     })
   })
   assert.equal(addResponse.status, 201)
@@ -202,10 +187,21 @@ test('API uses SQLite and routes static token endpoints correctly', async (t) =>
   const updateResponse = await fetch(`${baseUrl}/api/tokens/${added.token.id}`, {
     method: 'PUT',
     headers: authHeaders,
-    body: JSON.stringify({ secret: 'UPDATEDSECRET' })
+    body: JSON.stringify({ secret: 'tv3:updated-envelope' })
   })
   assert.equal(updateResponse.status, 200)
-  assert.equal((await updateResponse.json()).token.secret, 'UPDATEDSECRET')
+  assert.equal((await updateResponse.json()).token.secret, 'tv3:updated-envelope')
+
+  const plaintextResponse = await fetch(`${baseUrl}/api/tokens`, {
+    method: 'POST',
+    headers: authHeaders,
+    body: JSON.stringify({
+      issuer: 'Example',
+      account: 'api@example.com',
+      secret: 'JBSWY3DPEHPK3PXP'
+    })
+  })
+  assert.equal(plaintextResponse.status, 400)
 
   const searchResponse = await fetch(`${baseUrl}/api/tokens/search/Example`, {
     headers: authHeaders

@@ -21,14 +21,14 @@ docker-compose down
 
 ```bash
 # 构建镜像
-docker build -t token-vault:1.4.1 .
+docker build -t token-vault:1.5.0 .
 
 # 运行容器
 docker run -d \
   --name token-vault \
   -p 8080:80 \
   --restart unless-stopped \
-  token-vault:1.4.1
+  token-vault:1.5.0
 
 # 查看日志
 docker logs -f token-vault

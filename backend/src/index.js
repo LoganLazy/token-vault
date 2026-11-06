@@ -68,7 +68,7 @@ app.get('/health', async (req, res) => {
 app.get('/api', (req, res) => {
   res.json({
     name: 'Token Vault API',
-    version: '1.0.0',
+    version: '1.5.0',
     description: 'Multi-database TOTP token management API',
     endpoints: {
       auth: '/api/auth',
@@ -107,7 +107,9 @@ CORS Origin:  ${config.corsOrigin}
 API Endpoints:
   POST   /api/auth/register
   POST   /api/auth/login
+  POST   /api/auth/logout
   GET    /api/auth/me
+  DELETE /api/auth/me
   PUT    /api/auth/password
 
   GET    /api/tokens

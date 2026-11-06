@@ -46,6 +46,7 @@ export class MemoryAdapter extends StorageAdapter {
       email: userData.email,
       password_hash: userData.passwordHash,
       name: userData.name || null,
+      token_version: 0,
       created_at: now,
       updated_at: now
     }
@@ -73,6 +74,7 @@ export class MemoryAdapter extends StorageAdapter {
 
     if (userData.name !== undefined) user.name = userData.name
     if (userData.passwordHash !== undefined) user.password_hash = userData.passwordHash
+    if (userData.tokenVersion !== undefined) user.token_version = userData.tokenVersion
     user.updated_at = Date.now()
 
     this.users.set(id, user)

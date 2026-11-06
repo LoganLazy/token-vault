@@ -1,5 +1,5 @@
-const CACHE_NAME = 'token-vault-v1.4.1'
-const RUNTIME_CACHE = 'token-vault-runtime-v1.4.1'
+const CACHE_NAME = 'token-vault-v1.5.0'
+const RUNTIME_CACHE = 'token-vault-runtime-v1.5.0'
 const STATIC_ASSETS = ['/', '/index.html', '/manifest.json', '/favicon.svg']
 
 self.addEventListener('install', event => {

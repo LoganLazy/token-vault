@@ -1,6 +1,6 @@
 {
   "name": "token-vault",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "本地优先、支持加密保护和可选私有同步的 TOTP 验证码管理工具",
   "private": true,
   "type": "module",

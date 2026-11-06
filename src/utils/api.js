@@ -55,10 +55,10 @@ class APIClient {
 
   // ==================== Auth API ====================
 
-  async register(email, password, name) {
+  async register(email, password, name, inviteCode) {
     const data = await this.request('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, name })
+      body: JSON.stringify({ email, password, name, inviteCode })
     })
     this.setToken(data.token)
     return data
@@ -74,7 +74,22 @@ class APIClient {
   }
 
   async logout() {
+    // v1.5.0: revoke the token server-side (increments token_version)
+    // best-effort — the local token is discarded either way.
+    if (this.token) {
+      try {
+        await this.request('/auth/logout', { method: 'POST' })
+      } catch {
+        // Offline / already revoked: local logout still proceeds.
+      }
+    }
     this.setToken(null)
+  }
+
+  async deleteAccount() {
+    const data = await this.request('/auth/me', { method: 'DELETE' })
+    this.setToken(null)
+    return data
   }
 
   async getCurrentUser() {

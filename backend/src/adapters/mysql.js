@@ -1,12 +1,10 @@
 import mysql from 'mysql2/promise'
 import { StorageAdapter } from './base.js'
-import { SecretCipher } from '../utils/secretCipher.js'
 
 export class MySQLAdapter extends StorageAdapter {
   constructor(config) {
     super(config)
     this.pool = null
-    this.secretCipher = new SecretCipher(config.encryptionKey)
   }
 
   async connect() {
@@ -26,7 +24,6 @@ export class MySQLAdapter extends StorageAdapter {
 
       // Initialize schema
       await this.initSchema()
-      await this.migratePlaintextSecrets()
 
       console.log('✅ MySQL connected:', this.config.host)
     } catch (error) {
@@ -63,6 +60,7 @@ export class MySQLAdapter extends StorageAdapter {
           email VARCHAR(255) UNIQUE NOT NULL,
           password_hash TEXT NOT NULL,
           name VARCHAR(255),
+          token_version INT NOT NULL DEFAULT 0,
           created_at BIGINT NOT NULL,
           updated_at BIGINT NOT NULL,
           INDEX idx_email (email)
@@ -92,30 +90,13 @@ export class MySQLAdapter extends StorageAdapter {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
       `)
 
-      console.log('✅ MySQL schema initialized')
-    } finally {
-      connection.release()
-    }
-  }
-
-  async migratePlaintextSecrets() {
-    const connection = await this.pool.getConnection()
-    try {
-      const [tokens] = await connection.query('SELECT id, secret FROM tokens')
-      const plaintextTokens = tokens.filter(token => !this.secretCipher.isEncrypted(token.secret))
-      if (plaintextTokens.length === 0) return
-
-      await connection.beginTransaction()
-      for (const token of plaintextTokens) {
-        await connection.query(
-          'UPDATE tokens SET secret = ?, updated_at = ? WHERE id = ?',
-          [this.secretCipher.encrypt(token.secret), Date.now(), token.id]
-        )
+      try {
+        await connection.query('ALTER TABLE users ADD COLUMN token_version INT NOT NULL DEFAULT 0')
+      } catch (error) {
+        if (error.code !== 'ER_DUP_FIELDNAME') throw error
       }
-      await connection.commit()
-    } catch (error) {
-      await connection.rollback()
-      throw error
+
+      console.log('✅ MySQL schema initialized')
     } finally {
       connection.release()
     }
@@ -153,6 +134,10 @@ export class MySQLAdapter extends StorageAdapter {
       fields.push('password_hash = ?')
       values.push(userData.passwordHash)
     }
+    if (userData.tokenVersion !== undefined) {
+      fields.push('token_version = ?')
+      values.push(userData.tokenVersion)
+    }
 
     fields.push('updated_at = ?')
     values.push(Date.now())
@@ -181,7 +166,7 @@ export class MySQLAdapter extends StorageAdapter {
         userId,
         tokenData.issuer,
         tokenData.account,
-        this.secretCipher.encrypt(tokenData.secret),
+        tokenData.secret,
         tokenData.algorithm || 'SHA1',
         tokenData.digits || 6,
         tokenData.period || 30,
@@ -198,7 +183,7 @@ export class MySQLAdapter extends StorageAdapter {
       'SELECT * FROM tokens WHERE user_id = ? ORDER BY created_at DESC',
       [userId]
     )
-    return rows.map(token => this.secretCipher.decryptToken(token))
+    return rows
   }
 
   async getTokenById(userId, tokenId) {
@@ -206,7 +191,7 @@ export class MySQLAdapter extends StorageAdapter {
       'SELECT * FROM tokens WHERE id = ? AND user_id = ?',
       [tokenId, userId]
     )
-    return this.secretCipher.decryptToken(rows[0])
+    return rows[0]
   }
 
   async updateToken(userId, tokenId, tokenData) {
@@ -223,7 +208,7 @@ export class MySQLAdapter extends StorageAdapter {
     }
     if (tokenData.secret !== undefined) {
       fields.push('secret = ?')
-      values.push(this.secretCipher.encrypt(tokenData.secret))
+      values.push(tokenData.secret)
     }
     if (tokenData.category !== undefined) {
       fields.push('category = ?')
@@ -274,7 +259,7 @@ export class MySQLAdapter extends StorageAdapter {
        ORDER BY created_at DESC`,
       [userId, `%${query}%`, `%${query}%`]
     )
-    return rows.map(token => this.secretCipher.decryptToken(token))
+    return rows
   }
 
   async getTokensByCategory(userId, category) {
@@ -282,7 +267,7 @@ export class MySQLAdapter extends StorageAdapter {
       'SELECT * FROM tokens WHERE user_id = ? AND category = ? ORDER BY created_at DESC',
       [userId, category]
     )
-    return rows.map(token => this.secretCipher.decryptToken(token))
+    return rows
   }
 
   // Statistics
@@ -327,7 +312,7 @@ export class MySQLAdapter extends StorageAdapter {
       userId,
       token.issuer,
       token.account,
-      this.secretCipher.encrypt(token.secret),
+      token.secret,
       token.algorithm || 'SHA1',
       token.digits || 6,
       token.period || 30,

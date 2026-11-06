@@ -111,20 +111,16 @@ export function getServiceLogo(issuer) {
     return SERVICE_LOGOS[key]
   }
 
-  // 部分匹配
+  // 部分匹配：只返回白名单里的 URL，绝不根据用户输入拼接域名。
+  // 任意未列入 SERVICE_LOGOS 的 issuer 一律返回 null，避免把
+  // issuer / 客户端 IP 泄露给任意第三方域名。
   for (const [service, url] of Object.entries(SERVICE_LOGOS)) {
     if (key.includes(service) || service.includes(key)) {
       return url
     }
   }
 
-  // 尝试自动生成（通用域名）
-  if (key.includes('.')) {
-    return `https://${key}/favicon.ico`
-  }
-
-  // 尝试常见域名
-  return `https://www.${key}.com/favicon.ico`
+  return null
 }
 
 /**
