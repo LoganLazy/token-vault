@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react'
 import { Plus, Shield, Search, Menu, X, Sun, Moon, Lock, LockOpen, Download, Upload, Settings, Keyboard, CheckSquare, BarChart3, User } from 'lucide-react'
 import * as OTPAuth from 'otpauth'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
@@ -38,6 +38,7 @@ import {
 } from './utils/encryption'
 import { api } from './utils/api'
 import { syncManager } from './utils/sync'
+import { deriveSyncStatus } from './utils/syncStatus'
 
 function App() {
   const [tokens, setTokens] = useState([])
@@ -71,10 +72,42 @@ function App() {
   const [syncReady, setSyncReady] = useState(false)
   const [isInitialized, setIsInitialized] = useState(false)
 
+  // 同步状态（显示用；lastSyncAt 持久化，刷新后仍显示上次同步时间）
+  const [syncing, setSyncing] = useState(false)
+  const [lastSyncAt, setLastSyncAt] = useState(() => {
+    const saved = Number(localStorage.getItem('tv-last-sync-at'))
+    return Number.isFinite(saved) && saved > 0 ? saved : null
+  })
+  const [lastSyncError, setLastSyncError] = useState(null)
+
   const searchInputRef = useRef(null)
   const toast = useToast()
   const showToastError = toast.error
+  const dismissToastByKey = toast.dismissByKey
   const { t } = useTranslation()
+
+  // 同步成功：记录时间、清掉旧的同步失败提示。成功即证明主密码已就位，
+  // 之前“需要主密码”的旧提示也不再有效，一并清掉。
+  const markSyncSuccess = useCallback(() => {
+    const now = Date.now()
+    setLastSyncAt(now)
+    localStorage.setItem('tv-last-sync-at', String(now))
+    setLastSyncError(null)
+    dismissToastByKey('sync-failed')
+    dismissToastByKey('sync-master-password')
+  }, [dismissToastByKey])
+
+  // 同步失败：记录错误供状态栏显示；失败提示仍由各处的 toast 正常弹出。
+  const markSyncFailure = useCallback((error) => {
+    setLastSyncError(error)
+  }, [])
+
+  // 退出登录 / 移除主密码时同步状态作废（下次登录重新同步后更新）。
+  const resetSyncStatus = useCallback(() => {
+    setLastSyncAt(null)
+    localStorage.removeItem('tv-last-sync-at')
+    setLastSyncError(null)
+  }, [])
 
   // 拖拽传感器配置
   const sensors = useSensors(
@@ -374,9 +407,10 @@ function App() {
         setBackendSyncEnabled(syncEnabled)
         if (syncEnabled && !lockedOnStart) {
           if (!syncManager.hasSyncPassword()) {
-            toast.error('同步需要主密码：请先设置并解锁主密码，云端数据用主密码端到端加密', 5000)
+            toast.error('同步需要主密码：请先设置并解锁主密码，云端数据用主密码端到端加密', 5000, 'sync-master-password')
             return
           }
+          setSyncing(true)
           try {
             // 从后端加载令牌
             const backendTokens = await syncManager.loadFromBackend()
@@ -386,10 +420,16 @@ function App() {
               setTokens(mergeTokens(localTokens, backendTokens))
               toast.success('✓ 已从云端加载数据', 2000)
             }
-            if (backendTokens) setSyncReady(true)
+            if (backendTokens) {
+              setSyncReady(true)
+              markSyncSuccess()
+            }
           } catch (error) {
             console.error('Failed to load from backend:', error)
-            toast.error(`云端加载失败：${error.message || '请稍后重试'}，本地数据未受影响`, 5000)
+            markSyncFailure(error.message || '请稍后重试')
+            toast.error(`云端加载失败：${error.message || '请稍后重试'}，本地数据未受影响`, 5000, 'sync-failed')
+          } finally {
+            setSyncing(false)
           }
         }
       } catch (error) {
@@ -406,7 +446,7 @@ function App() {
     try {
       syncManager.enableSync()
     } catch (error) {
-      toast.error(`${error.message}：请先在设置中创建主密码`, 5000)
+      toast.error(`${error.message}：请先在设置中创建主密码`, 5000, 'sync-master-password')
       setBackendSyncEnabled(false)
       setSyncReady(false)
       toast.success(`✓ 欢迎，${user.name}！`, 2000)
@@ -414,6 +454,7 @@ function App() {
     }
 
     // 从后端加载令牌
+    setSyncing(true)
     try {
       const backendTokens = await syncManager.loadFromBackend()
       if (backendTokens) {
@@ -427,11 +468,15 @@ function App() {
       }
       setBackendSyncEnabled(true)
       setSyncReady(Boolean(backendTokens))
+      if (backendTokens) markSyncSuccess()
     } catch (error) {
       console.error('Failed to load from backend:', error)
-      toast.error(`云端加载失败：${error.message || '请稍后重试'}，本地数据未受影响`, 5000)
+      markSyncFailure(error.message || '请稍后重试')
+      toast.error(`云端加载失败：${error.message || '请稍后重试'}，本地数据未受影响`, 5000, 'sync-failed')
       setBackendSyncEnabled(true)
       setSyncReady(false)
+    } finally {
+      setSyncing(false)
     }
   }
 
@@ -444,6 +489,7 @@ function App() {
       setBackendSyncEnabled(false)
       setSyncReady(false)
       syncManager.disableSync()
+      resetSyncStatus()
       toast.success('✓ 已退出登录', 2000)
     }
   }
@@ -490,18 +536,25 @@ function App() {
         setCurrentPassword(password)
         // v1.5.0: 主密码只放内存，作为同步的端到端加密密钥。
         syncManager.setSyncPassword(password)
+        // 已解锁：之前“需要主密码”的旧提示不再有效，立即清掉。
+        toast.dismissByKey('sync-master-password')
         setIsLocked(false)
         if (syncManager.initSync()) {
+          setSyncing(true)
           try {
             const backendTokens = await syncManager.loadFromBackend()
             if (backendTokens) setTokens(mergeTokens(decrypted, backendTokens))
             setBackendSyncEnabled(true)
             setSyncReady(Boolean(backendTokens))
+            if (backendTokens) markSyncSuccess()
           } catch (error) {
             console.error('Failed to load from backend:', error)
-            toast.error(`云端加载失败：${error.message || '请稍后重试'}，本地数据未受影响`, 5000)
+            markSyncFailure(error.message || '请稍后重试')
+            toast.error(`云端加载失败：${error.message || '请稍后重试'}，本地数据未受影响`, 5000, 'sync-failed')
             setBackendSyncEnabled(true)
             setSyncReady(false)
+          } finally {
+            setSyncing(false)
           }
         }
       }
@@ -534,15 +587,23 @@ function App() {
     // 不能静默丢弃）
     if (backendSyncEnabled && syncReady) {
       const timer = window.setTimeout(async () => {
-        const result = await syncManager.syncToBackend(tokens)
-        if (result && !result.ok) {
-          console.error('Background sync failed:', result.error)
-          showToastError(`同步失败：${result.error}，本地数据已保留`)
+        setSyncing(true)
+        try {
+          const result = await syncManager.syncToBackend(tokens)
+          if (result && !result.ok) {
+            console.error('Background sync failed:', result.error)
+            markSyncFailure(result.error)
+            showToastError(`同步失败：${result.error}，本地数据已保留`, 5000, 'sync-failed')
+          } else {
+            markSyncSuccess()
+          }
+        } finally {
+          setSyncing(false)
         }
       }, 500)
       return () => window.clearTimeout(timer)
     }
-  }, [tokens, isInitialized, isLocked, currentPassword, backendSyncEnabled, syncReady, showToastError])
+  }, [tokens, isInitialized, isLocked, currentPassword, backendSyncEnabled, syncReady, showToastError, markSyncSuccess, markSyncFailure])
 
   // Update time every second for TOTP refresh
   useEffect(() => {
@@ -679,20 +740,25 @@ function App() {
     // v1.5.0: 主密码同时是同步的端到端加密密钥（仅放内存）。如果已
     // 登录同步账号，现在就可以启用同步并把本地数据加密上传。
     syncManager.setSyncPassword(password)
+    // 主密码已设置：之前“需要主密码”的旧提示不再有效，立即清掉。
+    toast.dismissByKey('sync-master-password')
     if (api.isAuthenticated()) {
+      setSyncing(true)
       try {
         syncManager.enableSync()
         setBackendSyncEnabled(true)
         const backendTokens = await syncManager.loadFromBackend()
         if (backendTokens) {
           setTokens(mergeTokens(tokens, backendTokens))
-          setSyncReady(true)
-        } else {
-          setSyncReady(true)
         }
+        setSyncReady(true)
+        markSyncSuccess()
       } catch (error) {
         console.error('Failed to enable sync:', error)
-        toast.error(`同步启用失败：${error.message || '请稍后重试'}`, 5000)
+        markSyncFailure(error.message || '请稍后重试')
+        toast.error(`同步启用失败：${error.message || '请稍后重试'}`, 5000, 'sync-failed')
+      } finally {
+        setSyncing(false)
       }
     }
     alert('主密码设置成功！您的数据已加密保护。')
@@ -719,6 +785,7 @@ function App() {
       syncManager.disableSync()
       setBackendSyncEnabled(false)
       setSyncReady(false)
+      resetSyncStatus()
       setTokens(decrypted)
 
       toast.success('✓ 主密码已移除，数据已解密', 2000)
@@ -742,6 +809,16 @@ function App() {
       })
     }
   }
+
+  // 同步状态（顶栏 + 使用统计里显示）
+  const syncStatus = deriveSyncStatus({
+    authenticated: Boolean(currentUser),
+    hasMasterPassword: hasMasterPassword(),
+    isLocked,
+    syncing,
+    lastSyncAt,
+    lastSyncError
+  })
 
   // Filter tokens
   const filteredTokens = useMemo(() => {
@@ -846,6 +923,16 @@ function App() {
                 >
                   <Upload className="w-5 h-5" />
                 </button>
+                {/* 同步状态 */}
+                {currentUser && (
+                  <div
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-surface dark:bg-ink border border-border text-xs text-muted"
+                    title={syncStatus.detail ? `${syncStatus.label}：${syncStatus.detail}` : syncStatus.label}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${syncStatus.dotClass}`} />
+                    <span>{syncStatus.label}{syncStatus.key === 'synced' && syncStatus.detail ? ` ${syncStatus.detail}` : ''}</span>
+                  </div>
+                )}
                 {hasMasterPassword() ? (
                   <>
                     <button
@@ -927,6 +1014,13 @@ function App() {
           {/* Mobile Menu */}
           {showMenu && (
             <div className="sm:hidden mt-4 pb-2 border-t border-border pt-4 space-y-2">
+              {/* 同步状态 */}
+              {currentUser && (
+                <div className="flex items-center gap-3 px-4 py-2.5 text-muted">
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${syncStatus.dotClass}`} />
+                  <span className="text-sm">同步状态：{syncStatus.label}{syncStatus.key === 'synced' && syncStatus.detail ? ` ${syncStatus.detail}` : ''}</span>
+                </div>
+              )}
               <button
                 onClick={() => {
                   if (currentUser) {
@@ -1210,6 +1304,7 @@ function App() {
         {isStatsModalOpen && (
           <StatsModal
             tokens={tokens}
+            syncStatus={syncStatus}
             onClose={() => setIsStatsModalOpen(false)}
           />
         )}
