@@ -1,5 +1,6 @@
-import { useEffect, memo } from 'react'
+import { memo } from 'react'
 import { CheckCircle, XCircle, AlertCircle, Info, X } from 'lucide-react'
+import { useStableTimeout } from '../utils/useStableTimeout'
 
 const TOAST_TYPES = {
   success: {
@@ -28,12 +29,13 @@ const Toast = memo(function Toast({ message, type = 'info', duration = 3000, onC
   const config = TOAST_TYPES[type]
   const Icon = config.icon
 
-  useEffect(() => {
-    if (duration > 0) {
-      const timer = setTimeout(onClose, duration)
-      return () => clearTimeout(timer)
-    }
-  }, [duration, onClose])
+  // onClose is an inline arrow in the parent, so it changes identity on
+  // every render — and the app re-renders every second for the TOTP clock.
+  // A plain effect on [duration, onClose] reset this timer every second,
+  // so no toast ever auto-dismissed and a sync error stayed stuck until a
+  // page refresh. useStableTimeout keeps the latest callback in a ref, so
+  // the timer is set once per toast.
+  useStableTimeout(onClose, duration)
 
   return (
     <div className="fixed top-4 right-4 z-50 animate-slide-in-right">

@@ -6,7 +6,7 @@ import { getServiceLogo } from '../utils/logos'
 
 const COLORS = ['#C4612F', '#A94E22', '#8B3E1C', '#6D2E16', '#4F1E10']
 
-export default function StatsModal({ tokens, onClose }) {
+export default function StatsModal({ tokens, syncStatus, onClose }) {
   const summary = getStatsSummary(tokens)
   const mostUsed = getMostUsedTokens(tokens, 10)
   const recentlyUsed = getRecentlyUsedTokens(tokens, 5)
@@ -60,6 +60,27 @@ export default function StatsModal({ tokens, onClose }) {
             <div className="text-xs text-muted">使用天数</div>
           </div>
         </div>
+
+        {/* Sync Status */}
+        {syncStatus && (
+          <div className="mb-6">
+            <div className="flex items-center gap-2 mb-3">
+              <Clock className="w-5 h-5 text-terracotta" />
+              <h3 className="text-lg font-light text-ink dark:text-surface">同步状态</h3>
+            </div>
+            <div className="flex items-center justify-between gap-3 p-3 bg-surface dark:bg-ink rounded-xl border border-border">
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className={`w-2 h-2 rounded-full ${syncStatus.dotClass}`} />
+                <span className="text-sm font-medium text-ink dark:text-surface">{syncStatus.label}</span>
+              </div>
+              {syncStatus.detail && (
+                <span className="text-xs text-muted text-right break-words">
+                  {syncStatus.key === 'synced' ? `上次同步 ${syncStatus.detail}` : syncStatus.detail}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Charts */}
         {mostUsed.length > 0 && (
