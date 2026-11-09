@@ -1146,7 +1146,7 @@ function App() {
           隐私政策
         </a>
         <span className="mx-2" aria-hidden="true">·</span>
-        <span>Token Vault v1.4.1</span>
+        <span>Token Vault v1.5.0</span>
       </footer>
 
       {/* Modals */}
